@@ -6,7 +6,8 @@ I/O behind interfaces, so the same code runs on the desktop sim now and a
 microcontroller later.
 
 Status: domain core + config + simulator are done and tested. Microcontroller
-adapters and the editor app are not started. Roadmap: [docs/plan.md](docs/plan.md).
+adapters are not started. (The editor app is a separate project.)
+Roadmap: [docs/plan.md](docs/plan.md).
 
 ## Build, test, run (WSL)
 

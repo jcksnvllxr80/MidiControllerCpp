@@ -9,10 +9,10 @@ config files over WiFi.
 
 Goal now: rewrite the **brain** in clean, portable C++ so it can later move to a
 microcontroller (WiFi → USB). Get the C++ patterns right and fully tested first; hardware
-and the web app come later. This plan covers the firmware. The controller app is last.
+comes later. This plan covers the firmware only; the controller/editor app is a separate project.
 
 ## Decisions (locked)
-- **Firmware lives in** `C:\Users\A-A-Ron\git\MidiControllerCpp\MidiControllerCpp` (empty repo). The current dir `MidiControllerControllerApp` is reserved for the controller app (Phase 4).
+- **Firmware lives in** `C:\Users\A-A-Ron\git\MidiControllerCpp\MidiControllerCpp`. The controller/editor app is a separate project, out of scope here.
 - **Config format: JSON.** One-time convert the existing YAML songs/sets/pedals to JSON.
 - **Build/run: WSL + GoogleTest, plain Makefile** (`make build`, `make test`, `make clean`). No real hardware in Phase 1 — desktop/sim adapters only.
 - **Architecture: ports & adapters (hexagonal).** Pure C++ domain core; all hardware behind interfaces. Same core runs on the sim now and the microcontroller later.
@@ -32,15 +32,15 @@ and the web app come later. This plan covers the firmware. The controller app is
 - **Faithful-port decision:** observable MIDI is reproduced byte-for-byte, including the Python
   quirks (notably `Set Preset`'s `bank` uses `cc:0`, falsy in Python → bank select never sent;
   only the preset Program Change goes out). Documented in `docs/midi-protocol.md` and locked by tests.
-- **Phase 3 (mcu) & Phase 4 (controller app) — not started** (as planned).
+- **Phase 3 (mcu) — not started** (as planned).
 
 ## What it does (so the model is clear)
 Data model: **Setlist → Songs → Parts**. A Part stores, per pedal, `(engaged, preset, params, settings)`. Loading a Part sends MIDI to set every pedal's on/off + preset (+ tempo). A **MidiPedal** has a name, a MIDI channel (1–16), and a per-pedal command map that turns high-level actions (Engage, Bypass, Set Preset, Set Tempo, knob/param tweaks) into MIDI CC/PC bytes. Footswitches step parts/songs; the rotary knob drives a menu for editing.
 
 ## Architecture
 ```
-        Controller App (Phase 4)
-                 │  USB (was WiFi/HTTP)
+        USB IConfigTransport  (external editor — separate project)
+                 │
         ┌────────▼─────────┐
         │   Ports (HAL)    │  IMidiOut ITempoOut IDisplay ILed
         │   interfaces     │  IInput IClock IConfigStore IConfigTransport
@@ -79,7 +79,7 @@ tools/yaml2json.py        one-shot data converter
 Makefile
 ```
 
-## Phase 1 — Domain core + config (the actual conversion)
+## ~~Phase 1 — Domain core + config (the actual conversion)~~ ✅ done
 Build the pure-C++ core. Python source → C++ target:
 
 | C++ module | Ports from | Notes |
@@ -101,7 +101,7 @@ Data: run `tools/yaml2json.py` once to convert all existing YAML (songs, sets, p
 `midi_controller.yaml`) into `data/*.json`; commit the JSON. JSON lib: vendor a single
 header (e.g. `nlohmann/json`) now; swap to a tiny MCU-friendly parser in Phase 3.
 
-## Phase 2 — Simulator, event loop, e2e, docs
+## ~~Phase 2 — Simulator, event loop, e2e, docs~~ ✅ done
 - **Sim adapters** (`adapters/sim/`): console/stdout display, scripted-or-keyboard input, `std::filesystem` config store, `std::chrono` clock, MIDI/tempo adapters that log messages.
 - **Application** (`app/`): wires ports+adapters and runs the event loop — port of `main()`/`setup()`. Poll input → button/encoder handler → mutate state → update display → emit MIDI/tempo. Replaces the Flask loop.
 - **`ITempoOut` made explicit**: the 4 tempo outputs + tap tempo were Arduino-only before. Define the port now (set BPM / emit tap); sim adapter logs.
@@ -109,10 +109,6 @@ header (e.g. `nlohmann/json`) now; swap to a tiny MCU-friendly parser in Phase 3
 
 ## Phase 3 — Microcontroller (later, sketch only)
 Swap in `adapters/mcu/`: real GPIO for footswitches/encoder/LED, SSD1306 driver, **native** MIDI DIN (2×) and the 4 tempo 1/4" outputs (absorbing the Arduino's job), flash/SD `IConfigStore`, and **USB `IConfigTransport`** replacing WiFi/HTTP. Core and tests stay unchanged — that's the payoff of the HAL. Target board chosen here (user has ideas).
-
-## Phase 4 — Controller app (last)
-Port the web app into `MidiControllerControllerApp`, talking to the firmware over the USB
-`IConfigTransport` instead of `piMidiHttp`. Out of scope until Phase 3 lands.
 
 ## Tests (GoogleTest / GoogleMock)
 - **Unit** (`tests/unit/`): `Transform` parse+eval; `MidiMessage` byte exactness; `convert_to_int`/dict/min-max/on-off; Setlist/Song/Part JSON load; `ButtonSM` short/long/partner with a fake clock; `MenuTree` navigation; config loaders.

@@ -6,7 +6,7 @@ the **ports** (interfaces). Adapters implement the ports for a target; the
 
 ```mermaid
 flowchart TB
-    CA["Controller App (Phase 4)"] -- "USB (was WiFi/HTTP)" --> APP
+    EXT["external editor (separate project)"] -- "USB IConfigTransport" --> APP
 
     subgraph APP["app/ Application — composition root + event loop"]
       L["poll input → button/encoder handler → mutate state → display → emit MIDI/tempo"]
