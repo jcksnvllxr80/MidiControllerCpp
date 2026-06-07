@@ -18,6 +18,19 @@ and the web app come later. This plan covers the firmware. The controller app is
 - **Architecture: ports & adapters (hexagonal).** Pure C++ domain core; all hardware behind interfaces. Same core runs on the sim now and the microcontroller later.
 - **This plan is maintained in-repo** at `MidiControllerCpp/docs/plan.md` as the canonical, living roadmap — updated as each phase lands. The `~/.claude/plans/` copy is throwaway.
 
+## Status (updated 2026-06-07)
+- **Phase 1 — DONE.** Domain core (`MidiMessage`, `Value`, `Transform`, `PedalConfig`,
+  `MidiPedal`, `Setlist/Song/Part`, `ButtonSM`, `ControllerState`, `MenuTree`), all 8
+  ports, JSON config loaders, and the one-shot `tools/yaml2json.py` → committed `data/*.json`.
+- **Phase 2 — DONE.** Sim adapters (`adapters/sim`), the `Application` event loop + `main.cpp`,
+  and docs (`README.md` + `docs/{architecture,domain,midi-protocol,config-format}.md`).
+- **Tests — 58 passing** (unit + mock + e2e) via vendored GoogleTest/GoogleMock; `make build/test/run`
+  all green in WSL. Verification criteria 1–4 below are met.
+- **Faithful-port decision:** observable MIDI is reproduced byte-for-byte, including the Python
+  quirks (notably `Set Preset`'s `bank` uses `cc:0`, falsy in Python → bank select never sent;
+  only the preset Program Change goes out). Documented in `docs/midi-protocol.md` and locked by tests.
+- **Phase 3 (mcu) & Phase 4 (controller app) — not started** (as planned).
+
 ## What it does (so the model is clear)
 Data model: **Setlist → Songs → Parts**. A Part stores, per pedal, `(engaged, preset, params, settings)`. Loading a Part sends MIDI to set every pedal's on/off + preset (+ tempo). A **MidiPedal** has a name, a MIDI channel (1–16), and a per-pedal command map that turns high-level actions (Engage, Bypass, Set Preset, Set Tempo, knob/param tweaks) into MIDI CC/PC bytes. Footswitches step parts/songs; the rotary knob drives a menu for editing.
 

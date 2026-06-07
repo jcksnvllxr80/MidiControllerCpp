@@ -1,0 +1,13 @@
+# Build artifacts
+/build/
+*.o
+*.a
+*.d
+midicontroller
+midicontroller_tests
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

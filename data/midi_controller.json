@@ -1,0 +1,101 @@
+{
+  "button_setup": {
+    "1": {
+      "function": "Part Dn",
+      "long_press_func": "Select Part Dn"
+    },
+    "2": {
+      "function": "Select"
+    },
+    "3": {
+      "function": "Part Up",
+      "long_press_func": "Select Part Up"
+    },
+    "4": {
+      "function": "Song Dn",
+      "long_press_func": "Select Song Dn"
+    },
+    "5": {
+      "function": "Song Up",
+      "long_press_func": "Select Song Up"
+    }
+  },
+  "controller_api": {
+    "buttons_locked": false,
+    "port": 8090
+  },
+  "current_settings": {
+    "mode": "standard",
+    "preset": {
+      "part": "Chorus",
+      "setList": "2017-05-22 Set",
+      "song": "Victory - Rhythm"
+    },
+    "tempo": 106
+  },
+  "knob": {
+    "brightness": "100",
+    "color": "Yellow"
+  },
+  "midi": {
+    "channels": {
+      "1": {
+        "name": "QuartzV2",
+        "preset": {
+          "name": null,
+          "number": 2
+        },
+        "state": true
+      },
+      "2": {
+        "name": "TimeLine",
+        "preset": {
+          "name": null,
+          "number": 1
+        },
+        "state": true
+      },
+      "3": {
+        "name": "Iridium",
+        "preset": {
+          "name": null,
+          "number": 1
+        },
+        "state": true
+      },
+      "4": {
+        "name": "BigSky",
+        "preset": {
+          "name": null,
+          "number": 2
+        },
+        "state": true
+      },
+      "5": {
+        "name": "SuperSwitcher",
+        "preset": {
+          "name": null,
+          "number": 5
+        },
+        "state": true
+      },
+      "6": null,
+      "7": null,
+      "8": null,
+      "9": null,
+      "10": null,
+      "11": null,
+      "12": null,
+      "13": null,
+      "14": null,
+      "15": null,
+      "16": {
+        "name": "ScarlettLove",
+        "preset": {
+          "name": "Plexi"
+        },
+        "state": true
+      }
+    }
+  }
+}

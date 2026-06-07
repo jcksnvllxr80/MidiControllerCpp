@@ -1,0 +1,274 @@
+{
+  "name": "Here As In Heaven - Lead",
+  "tempo": 74,
+  "parts": {
+    "Intro": {
+      "position": 1,
+      "pedals": {
+        "ScarlettLove": {
+          "engaged": true,
+          "preset": "TS808"
+        },
+        "TimeLine": {
+          "engaged": false,
+          "preset": 0
+        },
+        "BigSky": {
+          "engaged": false,
+          "preset": 0
+        },
+        "QuartzV2": {
+          "engaged": false,
+          "preset": 1
+        },
+        "Iridium": {
+          "engaged": true,
+          "preset": 1,
+          "params": null
+        },
+        "SuperSwitcher": {
+          "preset": 1,
+          "params": {
+            "Loop 1": {
+              "name": "Morning Glory",
+              "engaged": false
+            },
+            "Loop 2": {
+              "name": "Angry Charlie",
+              "engaged": false
+            },
+            "Loop 3": {
+              "name": "Superbolt",
+              "engaged": false
+            },
+            "Loop 4": {
+              "name": "Xotic Wah",
+              "engaged": false
+            },
+            "Loop 6": {
+              "name": "POG",
+              "engaged": false
+            },
+            "Loop 7": {
+              "name": "El Capistan",
+              "engaged": false
+            },
+            "Loop 8": {
+              "name": "Super Pulsar",
+              "engaged": false
+            },
+            "Control 1": {
+              "name": "Superbolt Heavy",
+              "engaged": false
+            },
+            "Control 2": {
+              "name": "El Capistan Favorite",
+              "engaged": false
+            }
+          }
+        }
+      }
+    },
+    "Verse": {
+      "position": 2,
+      "pedals": {
+        "ScarlettLove": {
+          "engaged": true,
+          "preset": "Plexi"
+        },
+        "TimeLine": {
+          "engaged": false,
+          "preset": 2
+        },
+        "BigSky": {
+          "engaged": true,
+          "preset": 1
+        },
+        "QuartzV2": {
+          "engaged": true,
+          "preset": 1
+        },
+        "Iridium": {
+          "engaged": true,
+          "preset": 1,
+          "params": null
+        },
+        "SuperSwitcher": {
+          "preset": 1,
+          "params": {
+            "Loop 1": {
+              "name": "Morning Glory",
+              "engaged": false
+            },
+            "Loop 2": {
+              "name": "Angry Charlie",
+              "engaged": false
+            },
+            "Loop 3": {
+              "name": "Superbolt",
+              "engaged": false
+            },
+            "Loop 4": {
+              "name": "Xotic Wah",
+              "engaged": false
+            },
+            "Loop 6": {
+              "name": "POG",
+              "engaged": false
+            },
+            "Loop 7": {
+              "name": "El Capistan",
+              "engaged": false
+            },
+            "Loop 8": {
+              "name": "Super Pulsar",
+              "engaged": false
+            },
+            "Control 1": {
+              "name": "Superbolt Heavy",
+              "engaged": false
+            },
+            "Control 2": {
+              "name": "El Capistan Favorite",
+              "engaged": false
+            }
+          }
+        }
+      }
+    },
+    "Chorus": {
+      "position": 3,
+      "pedals": {
+        "ScarlettLove": {
+          "engaged": true,
+          "preset": "Plexi"
+        },
+        "TimeLine": {
+          "engaged": false,
+          "preset": 2
+        },
+        "BigSky": {
+          "engaged": true,
+          "preset": 1
+        },
+        "QuartzV2": {
+          "engaged": true,
+          "preset": 1
+        },
+        "Iridium": {
+          "engaged": true,
+          "preset": 1,
+          "params": null
+        },
+        "SuperSwitcher": {
+          "preset": 1,
+          "params": {
+            "Loop 1": {
+              "name": "Morning Glory",
+              "engaged": false
+            },
+            "Loop 2": {
+              "name": "Angry Charlie",
+              "engaged": false
+            },
+            "Loop 3": {
+              "name": "Superbolt",
+              "engaged": false
+            },
+            "Loop 4": {
+              "name": "Xotic Wah",
+              "engaged": false
+            },
+            "Loop 6": {
+              "name": "POG",
+              "engaged": false
+            },
+            "Loop 7": {
+              "name": "El Capistan",
+              "engaged": false
+            },
+            "Loop 8": {
+              "name": "Super Pulsar",
+              "engaged": false
+            },
+            "Control 1": {
+              "name": "Superbolt Heavy",
+              "engaged": false
+            },
+            "Control 2": {
+              "name": "El Capistan Favorite",
+              "engaged": false
+            }
+          }
+        }
+      }
+    },
+    "Bridge": {
+      "position": 4,
+      "pedals": {
+        "ScarlettLove": {
+          "engaged": true,
+          "preset": "Plexi"
+        },
+        "TimeLine": {
+          "engaged": true,
+          "preset": 2
+        },
+        "BigSky": {
+          "engaged": true,
+          "preset": 1
+        },
+        "QuartzV2": {
+          "engaged": true,
+          "preset": 1
+        },
+        "Iridium": {
+          "engaged": true,
+          "preset": 1,
+          "params": null
+        },
+        "SuperSwitcher": {
+          "preset": 1,
+          "params": {
+            "Loop 1": {
+              "name": "Morning Glory",
+              "engaged": false
+            },
+            "Loop 2": {
+              "name": "Angry Charlie",
+              "engaged": false
+            },
+            "Loop 3": {
+              "name": "Superbolt",
+              "engaged": false
+            },
+            "Loop 4": {
+              "name": "Xotic Wah",
+              "engaged": false
+            },
+            "Loop 6": {
+              "name": "POG",
+              "engaged": false
+            },
+            "Loop 7": {
+              "name": "El Capistan",
+              "engaged": false
+            },
+            "Loop 8": {
+              "name": "Super Pulsar",
+              "engaged": false
+            },
+            "Control 1": {
+              "name": "Superbolt Heavy",
+              "engaged": false
+            },
+            "Control 2": {
+              "name": "El Capistan Favorite",
+              "engaged": false
+            }
+          }
+        }
+      }
+    }
+  }
+}

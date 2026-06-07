@@ -1,0 +1,42 @@
+{
+  "Toggle Bypass": {
+    "cc": 29,
+    "value": 1
+  },
+  "Engage": {
+    "cc": 23,
+    "value": 1
+  },
+  "Bypass": {
+    "cc": 24,
+    "value": 1
+  },
+  "Set Preset": {
+    "control change": {
+      "func": "{\"TS808\":20, \"Plexi\":21, \"Klone\":22}.get(x, None)",
+      "options": [
+        "TS808",
+        "Plexi",
+        "Klone"
+      ]
+    }
+  },
+  "Parameters": {
+    "Cycle Clipping": {
+      "cc": 25,
+      "value": 1
+    },
+    "TS808": {
+      "cc": 20,
+      "value": 1
+    },
+    "Plexi": {
+      "cc": 21,
+      "value": 1
+    },
+    "Klone": {
+      "cc": 22,
+      "value": 1
+    }
+  }
+}

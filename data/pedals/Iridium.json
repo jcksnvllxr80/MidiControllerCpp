@@ -1,0 +1,144 @@
+{
+  "Set Preset": {
+    "multi": {
+      "1": "bank",
+      "2": "preset"
+    },
+    "bank": {
+      "cc": 0,
+      "func": "x / 128"
+    },
+    "preset": {
+      "program change": {
+        "func": "x % 128"
+      }
+    },
+    "min": 0,
+    "max": 299
+  },
+  "Engage": {
+    "cc": 102,
+    "value": 127
+  },
+  "Bypass": {
+    "cc": 102,
+    "value": 0
+  },
+  "Parameters": {
+    "Volume Pedal": {
+      "notes": "min volume 0 - max volume 127",
+      "cc": 7,
+      "min": 0,
+      "max": 127
+    },
+    "Volume Pedal Pre/Post": {
+      "cc": 9,
+      "dict": {
+        "pre": 0,
+        "post": 127
+      }
+    },
+    "Level": {
+      "notes": "min level 0 - max level 127",
+      "cc": 12,
+      "min": 0,
+      "max": 127
+    },
+    "Drive": {
+      "notes": "min drive 0 - max drive 127",
+      "cc": 13,
+      "min": 0,
+      "max": 127
+    },
+    "Bass": {
+      "notes": "min bass 0 - max bass 127",
+      "cc": 14,
+      "min": 0,
+      "max": 127
+    },
+    "Mid": {
+      "notes": "min mid 0 - max mid 127",
+      "cc": 15,
+      "min": 0,
+      "max": 127
+    },
+    "Treble": {
+      "notes": "min treble 0 - max treble 127",
+      "cc": 16,
+      "min": 0,
+      "max": 127
+    },
+    "Room Level": {
+      "notes": "min room level 0 - max room level 127",
+      "cc": 17,
+      "min": 0,
+      "max": 127
+    },
+    "Room Size": {
+      "notes": "1 = small - 2 = medium - 3 = large",
+      "cc": 18,
+      "dict": {
+        "small": 1,
+        "medium": 2,
+        "large": 3
+      }
+    },
+    "Amp": {
+      "notes": "1 = round - 2 = chime - 3 = punch",
+      "cc": 19,
+      "dict": {
+        "round": 1,
+        "chime": 2,
+        "punch": 3
+      }
+    },
+    "Cab": {
+      "notes": "0-2 (round a, b, c) - 3-5 (chime a, b, c) - 6-8 (punch a, b, c)",
+      "cc": 20,
+      "dict": {
+        "Round 1x12 Fender - Deluxe Reverb": 0,
+        "Round 1x12 Fender - Blues Junior": 1,
+        "Round 2x10 Fender - Vibrolux": 2,
+        "Chime 2x12 Vox - AC30-6 Open Back Fawn": 3,
+        "Chime 1x12 Custom Cab - Celestion Blue AlNiCo": 4,
+        "Chime 4x12 MesaBoogie - Half-Back": 5,
+        "Punch 4x12 Marshall - Celestion G12M-25s": 6,
+        "Punch 2x12 Custom Cab - Celestion Vintage 30s": 7,
+        "Punch 8x12 Marshall - Celestion T652s": 8
+      }
+    },
+    "Footswitch Fav": {
+      "notes": "0 = release - 1 thru 127 = press",
+      "cc": 27,
+      "press": 127,
+      "release": 0
+    },
+    "Footswitch On": {
+      "notes": "0 = release - 1 thru 127 = press",
+      "cc": 28,
+      "press": 127,
+      "release": 0
+    },
+    "MIDI Expression": {
+      "notes": "0 = off - 1 thru 127 = on",
+      "cc": 60,
+      "off": 0,
+      "on": 127
+    },
+    "Expression Pedal": {
+      "notes": "min exp pedal 0 - max exp pedal 127",
+      "cc": 100,
+      "min": 0,
+      "max": 127
+    },
+    "Bank Select": {
+      "notes": "bank1 = 0 - bank2 = 1 - bank3 = 2",
+      "cc": 0,
+      "dict": {
+        "bank 1": 0,
+        "bank 2": 1,
+        "bank 3": 2
+      }
+    }
+  }
+}
