@@ -24,8 +24,11 @@ and the web app come later. This plan covers the firmware. The controller app is
   ports, JSON config loaders, and the one-shot `tools/yaml2json.py` → committed `data/*.json`.
 - **Phase 2 — DONE.** Sim adapters (`adapters/sim`), the `Application` event loop + `main.cpp`,
   and docs (`README.md` + `docs/{architecture,domain,midi-protocol,config-format}.md`).
-- **Tests — 58 passing** (unit + mock + e2e) via vendored GoogleTest/GoogleMock; `make build/test/run`
-  all green in WSL. Verification criteria 1–4 below are met.
+- **Tests — ~797 passing** (unit + mock + e2e) via vendored GoogleTest/GoogleMock; `make build/test/run`
+  all green in WSL, zero warnings. Verification criteria 1–4 below are met. Coverage: a data-driven
+  suite checks every reachable pedal param (representative values) through the real dispatch, plus
+  per-module suites for MidiMessage/Value/Transform/PedalConfig/MidiPedal/SongPartSet/ControllerState/
+  ButtonSM/MenuTree/ConfigLoader/FsConfigStore/sim adapters/Application, and per-part e2e flows.
 - **Faithful-port decision:** observable MIDI is reproduced byte-for-byte, including the Python
   quirks (notably `Set Preset`'s `bank` uses `cc:0`, falsy in Python → bank select never sent;
   only the preset Program Change goes out). Documented in `docs/midi-protocol.md` and locked by tests.

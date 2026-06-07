@@ -19,6 +19,7 @@ struct EngagedRef {
     std::string name;
     bool engaged = false;
     bool operator==(const EngagedRef& o) const { return name == o.name && engaged == o.engaged; }
+    bool operator!=(const EngagedRef& o) const { return !(*this == o); }
 };
 
 // std::monostate == Python's None.
