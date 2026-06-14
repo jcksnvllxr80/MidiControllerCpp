@@ -30,6 +30,7 @@ public:
     bool exists(const std::string& key) const override;
     std::string read(const std::string& key) const override;
     void write(const std::string& key, const std::string& data) override;  // overlay (+ persist)
+    void remove(const std::string& key) override;                          // tombstone (+ persist)
     std::vector<std::string> list(const std::string& subdir) const override;
 
 private:

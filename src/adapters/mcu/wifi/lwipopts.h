@@ -10,10 +10,14 @@
 
 #define MEM_LIBC_MALLOC 0
 #define MEM_ALIGNMENT 4
-#define MEM_SIZE 16000
+// Headroom for streaming a large (~30 KB) get_pedal reply: replies are chunked
+// across many tcp_write/sent cycles (WifiManager::trySend), so this only needs to
+// cover in-flight segments + pbufs, not the whole payload. Bumped from 16000/24 —
+// the RP2350 has plenty of RAM, and tight pools were a stall risk under load.
+#define MEM_SIZE 32000
 #define MEMP_NUM_TCP_SEG 32
 #define MEMP_NUM_ARP_QUEUE 10
-#define PBUF_POOL_SIZE 24
+#define PBUF_POOL_SIZE 32
 
 #define LWIP_ARP 1
 #define LWIP_ETHERNET 1

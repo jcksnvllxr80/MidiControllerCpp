@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "pico/cyw43_arch.h"
+#include "pico/time.h"  // to_ms_since_boot / get_absolute_time
 
 #include "lwip/apps/mdns.h"
 #include "lwip/ip4_addr.h"
@@ -18,6 +19,10 @@ namespace mc::mcu {
 
 namespace {
 using json = nlohmann::json;
+
+constexpr uint32_t kConnectTimeoutMs = 15000;  // give up one async join attempt after this
+constexpr uint32_t kRetryIntervalMs = 5000;    // wait before re-trying after a failure / drop
+uint32_t nowMs() { return to_ms_since_boot(get_absolute_time()); }
 
 err_t tcpRecvTramp(void* arg, tcp_pcb* pcb, pbuf* p, err_t err) {
     auto* self = static_cast<WifiManager*>(arg);
@@ -80,32 +85,76 @@ void WifiManager::begin() {
         return;
     }
     inited_ = true;
-    if (enabled_ && !ssid_.empty()) connectNow();
+    cyw43_arch_enable_sta_mode();
+    if (enabled_ && !ssid_.empty()) startConnect();  // non-blocking; poll() drives it
 }
 
 void WifiManager::poll() {
-    if (inited_) cyw43_arch_poll();
+    if (!inited_) return;
+    cyw43_arch_poll();
+    serviceLink();
 }
 
-void WifiManager::connectNow() {
+// Kick off a non-blocking join. The outcome is observed in serviceLink() via the
+// link status, so this returns immediately and never stalls the main loop.
+void WifiManager::startConnect() {
     if (!inited_ || !enabled_ || ssid_.empty()) return;
-    cyw43_arch_enable_sta_mode();
-    emitStatus("WiFi: connecting");
     uint32_t auth = password_.empty() ? CYW43_AUTH_OPEN : CYW43_AUTH_WPA2_AES_PSK;
-    if (cyw43_arch_wifi_connect_timeout_ms(ssid_.c_str(), password_.c_str(), auth, 20000)) {
-        connected_ = false;
-        ip_.clear();
+    lastAttemptMs_ = nowMs();
+    if (cyw43_arch_wifi_connect_async(ssid_.c_str(), password_.c_str(), auth) != 0) {
+        link_ = Link::Idle;  // couldn't even start -> serviceLink() retries after backoff
         emitStatus("WiFi: connect failed");
         return;
     }
+    link_ = Link::Connecting;
+    connectStartMs_ = lastAttemptMs_;
+    emitStatus("WiFi: connecting");
+}
+
+// The point of this rewrite: a non-blocking state machine that finishes the boot
+// join without stalling, reconnects automatically if the link drops, and never
+// blocks long enough to trip the watchdog.
+void WifiManager::serviceLink() {
+    if (!enabled_ || ssid_.empty()) return;  // nothing to maintain
+    int st = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA);
+    switch (link_) {
+        case Link::Connecting:
+            if (st == CYW43_LINK_UP) {
+                onLinkUp();
+            } else if (st < 0 || (nowMs() - connectStartMs_) > kConnectTimeoutMs) {
+                connected_ = false;  // failed (bad auth / no net) or timed out
+                ip_.clear();
+                link_ = Link::Idle;
+                lastAttemptMs_ = nowMs();
+                emitStatus("WiFi: retrying");
+            }
+            break;
+        case Link::Up:
+            if (st != CYW43_LINK_UP) {  // dropped under us
+                connected_ = false;
+                ip_.clear();
+                teardownNet();
+                link_ = Link::Idle;
+                lastAttemptMs_ = nowMs();
+                emitStatus("WiFi: link lost");
+            }
+            break;
+        case Link::Idle:
+            if (nowMs() - lastAttemptMs_ >= kRetryIntervalMs) startConnect();
+            break;
+    }
+}
+
+void WifiManager::onLinkUp() {
+    link_ = Link::Up;
     connected_ = true;
     ip_ = ip4addr_ntoa(netif_ip4_addr(netif_default));
-    startServer();
+    startServer();  // rebinds if a previous drop tore it down
     startMdns();
     emitStatus("WiFi " + ip_);
 }
 
-void WifiManager::disconnectNow() {
+void WifiManager::teardownNet() {
     if (client_) {
         tcp_arg(client_, nullptr);
         tcp_close(client_);
@@ -118,7 +167,12 @@ void WifiManager::disconnectNow() {
     rxLine_.clear();
     outbox_.clear();
     outSent_ = 0;
+}
+
+void WifiManager::disconnectNow() {
+    teardownNet();
     if (inited_) cyw43_wifi_leave(&cyw43_state, CYW43_ITF_STA);
+    link_ = Link::Idle;
     connected_ = false;
     ip_.clear();
     emitStatus("WiFi: off");
@@ -218,11 +272,11 @@ void WifiManager::onClientErr() {
 void WifiManager::setCredentials(const std::string& ssid, const std::string& password) {
     ssid_ = ssid;
     password_ = password;
+    enabled_ = true;  // setting credentials implies "use this network"
     saveConfig();
-    if (inited_ && enabled_) {
-        disconnectNow();  // drop old link state, keep enabled_
-        enabled_ = true;
-        connectNow();
+    if (inited_) {
+        disconnectNow();  // leave any old network + tear down
+        startConnect();   // non-blocking join to the new one
     }
 }
 
@@ -230,8 +284,11 @@ void WifiManager::setEnabled(bool on) {
     enabled_ = on;
     saveConfig();
     if (!inited_) return;
-    if (on) connectNow();
-    else disconnectNow();
+    if (on) {
+        if (link_ == Link::Idle) startConnect();  // no-op if already connecting/up
+    } else {
+        disconnectNow();
+    }
 }
 
 WifiStatus WifiManager::status() const {

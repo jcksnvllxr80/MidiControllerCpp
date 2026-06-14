@@ -8,7 +8,9 @@ you reuse `protocol/codec.rs` verbatim.
 
 ## What the firmware already does
 
-- Stores WiFi credentials in flash; on boot, if enabled, joins the saved network.
+- Stores WiFi credentials in flash; on boot, if enabled, joins the saved network
+  (non-blocking) and **auto-reconnects** if the link later drops — no reboot needed,
+  so the app's TCP transport should simply retry the connection after a blip.
 - Runs the **same** request/response protocol over **TCP on port 8080** (in
   addition to USB serial).
 - Advertises via **mDNS**: hostname `midicontroller.local`, service
@@ -36,6 +38,56 @@ you reuse `protocol/codec.rs` verbatim.
 3. Show the returned `ip` (the OLED shows it too). Device is now on the network.
 4. Next launch (or after a rescan), the **WiFi transport discovers it via mDNS**
    and the user can connect wirelessly — no cable.
+
+## Firmware protocol contract (what's actually implemented)
+
+So you don't have to infer it from the firmware source — this is exactly how the
+device behaves, on **both** the USB serial link and the WiFi TCP link (identical
+framing).
+
+**Framing**
+- One JSON object per line, `\n`-terminated. Requests carry an `id`; the firmware
+  echoes it in the response.
+- Success: `{"id":N,"ok":true,"data":<op-specific>}` (no `error`). `data` is
+  omitted for ops that have no payload.
+- Failure: `{"id":N,"ok":false,"error":"<message>"}` (no `data`).
+- The firmware **ignores blank / non-JSON lines** (debug `printf` shares the same
+  USB CDC), so a reader must skip non-matching lines — exactly what `codec.rs`
+  already does.
+- USB: 115200 8N1, device product string "MidiController". WiFi: TCP `:8080`,
+  **one client at a time**. Same JSON framing on both.
+
+**Ops the firmware answers** (`op` → request fields → `data` returned):
+
+| `op` | request fields | `data` on success | notes |
+|---|---|---|---|
+| `identify` | — | `{"name","firmware","protocol_version"}` | matches `DeviceIdentity`; use to confirm the device |
+| `ping` | — | *(none)* | heartbeat |
+| `list_sets` / `list_songs` / `list_pedals` | — | array of name strings | |
+| `get_set` / `get_song` / `get_pedal` | `name` | that file's JSON object | the stored config, verbatim |
+| `write_set` / `write_song` / `write_pedal` | `name`, `data` | *(none)* | persists to flash |
+| `delete_set` / `delete_song` / `delete_pedal` | `name` | *(none)* | removes that file (idempotent) |
+| `write_part` | `song`, `part`, `data` | *(none)* | splices one part into the song file (tempo + other parts preserved) |
+| `delete_part` | `song`, `part` | *(none)* | removes one part from the song file |
+| `dpad` | `direction` = `up`\|`down`\|`CW`\|`CCW` | `{"display_message": "..."}` | drives the menu/encoder; string is the OLED text |
+| `short` | `button` = `"1"`..`"5"` | `{"display_message": "..."}` | footswitch action (1 PartDn, 2 Select, 3 PartUp, 4 SongDn, 5 SongUp) |
+| `wifi_set` | `ssid`, `password` (optional) | `{"enabled","connected","ssid","ip"}` | saves creds, enables, connects |
+| `wifi_status` | — | `{"enabled","connected","ssid","ip"}` | |
+| `wifi_enable` | `on` (bool) | `{"enabled","connected","ssid","ip"}` | persisted on/off |
+
+**Editing semantics (parts live inside songs).** There are no per-part files, so
+`write_part` / `delete_part` do a read-modify-write of `songs/<song>.json`: the
+firmware loads the song, splices/removes the named part, and writes the whole song
+back (tempo and the other parts are preserved). `delete_*` is idempotent — deleting
+a missing key still returns `ok:true`. On the device, deleting a build-time-embedded
+config tombstones it (the embedded blob can't be physically erased), and a later
+`write_*` of the same name brings it back.
+
+> **MCU caveat:** on-device persistence currently uses one 4 KB flash sector for the
+> write overlay. Small edits (a part, the current set/song/part, WiFi creds) are fine;
+> persisting several *large* (~20–30 KB) song/pedal edits at once can exceed that
+> sector and silently no-op the save. Multi-sector flash is a known follow-up. (The
+> committed/embedded config is regenerated from `data/` at build time regardless.)
 
 ## Task 1 — WiFi transport (`src-tauri/src/transport/wifi.rs`)
 

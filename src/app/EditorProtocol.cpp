@@ -76,6 +76,31 @@ std::string EditorProtocol::handleLine(const std::string& line) {
         } else if (op == "write_pedal") {
             store_.write("pedals/" + name() + ".json", req.at("data").dump(2));
             resp["ok"] = true;
+        } else if (op == "delete_set") {
+            store_.remove("sets/" + name() + ".json");
+            resp["ok"] = true;
+        } else if (op == "delete_song") {
+            store_.remove("songs/" + name() + ".json");
+            resp["ok"] = true;
+        } else if (op == "delete_pedal") {
+            store_.remove("pedals/" + name() + ".json");
+            resp["ok"] = true;
+        } else if (op == "write_part") {
+            // Parts have no file of their own — they live inside the song file.
+            // Read it, splice this one part in (preserving tempo + the others),
+            // and write the whole song back.
+            const std::string key = "songs/" + req.at("song").get<std::string>() + ".json";
+            json doc = json::parse(store_.read(key));
+            if (!doc.contains("parts") || !doc["parts"].is_object()) doc["parts"] = json::object();
+            doc["parts"][req.at("part").get<std::string>()] = req.at("data");
+            store_.write(key, doc.dump(2));
+            resp["ok"] = true;
+        } else if (op == "delete_part") {
+            const std::string key = "songs/" + req.at("song").get<std::string>() + ".json";
+            json doc = json::parse(store_.read(key));
+            if (doc.contains("parts") && doc["parts"].is_object()) doc["parts"].erase(req.at("part").get<std::string>());
+            store_.write(key, doc.dump(2));
+            resp["ok"] = true;
         } else if (op == "dpad") {
             const std::string dir = req.at("direction").get<std::string>();
             if (dir == "CW") app_.handleEvent({InputEvent::Type::EncoderCW, 0, 0.0});

@@ -157,6 +157,50 @@ TEST(Protocol, WritePedalPersistsToStore) {
     fs::remove_all(base);
 }
 
+TEST(Protocol, DeleteSetSongPedalRemoveFromStore) {
+    fs::path base = fs::temp_directory_path() / "mc_proto_delete";
+    fs::remove_all(base);
+    sim::FsConfigStore tmp(base.string());
+    tmp.write("sets/Doomed.json", R"({"name":"Doomed","songs":[]})");
+    tmp.write("songs/Doomed.json", R"({"name":"Doomed","parts":{}})");
+    tmp.write("pedals/Doomed.json", R"({"Engage":{"cc":1}})");
+    Rig r;
+    EditorProtocol p(tmp, r.app);
+
+    EXPECT_EQ(json::parse(p.handleLine(R"({"id":1,"op":"delete_set","name":"Doomed"})"))["ok"], true);
+    EXPECT_FALSE(tmp.exists("sets/Doomed.json"));
+    EXPECT_EQ(json::parse(p.handleLine(R"({"id":2,"op":"delete_song","name":"Doomed"})"))["ok"], true);
+    EXPECT_FALSE(tmp.exists("songs/Doomed.json"));
+    EXPECT_EQ(json::parse(p.handleLine(R"({"id":3,"op":"delete_pedal","name":"Doomed"})"))["ok"], true);
+    EXPECT_FALSE(tmp.exists("pedals/Doomed.json"));
+    fs::remove_all(base);
+}
+
+TEST(Protocol, WritePartMergesIntoSongPreservingOthers) {
+    fs::path base = fs::temp_directory_path() / "mc_proto_writepart";
+    fs::remove_all(base);
+    sim::FsConfigStore tmp(base.string());
+    tmp.write("songs/S.json", R"({"name":"S","tempo":120,"parts":{"Intro":{"position":1,"pedals":{}}}})");
+    Rig r;
+    EditorProtocol p(tmp, r.app);
+
+    auto resp = json::parse(p.handleLine(
+        R"({"id":1,"op":"write_part","song":"S","part":"Chorus","data":{"position":2,"pedals":{"TimeLine":{"engaged":true}}}})"));
+    EXPECT_EQ(resp["ok"], true);
+
+    auto doc = json::parse(tmp.read("songs/S.json"));
+    EXPECT_EQ(doc["tempo"], 120);                                  // untouched
+    EXPECT_TRUE(doc["parts"].contains("Intro"));                  // sibling preserved
+    EXPECT_EQ(doc["parts"]["Chorus"]["pedals"]["TimeLine"]["engaged"], true);
+
+    // delete_part removes just that part.
+    EXPECT_EQ(json::parse(p.handleLine(R"({"id":2,"op":"delete_part","song":"S","part":"Intro"})"))["ok"], true);
+    auto doc2 = json::parse(tmp.read("songs/S.json"));
+    EXPECT_FALSE(doc2["parts"].contains("Intro"));
+    EXPECT_TRUE(doc2["parts"].contains("Chorus"));
+    fs::remove_all(base);
+}
+
 TEST(Protocol, WifiUnsupportedWhenNoRadio) {
     Rig r;  // EditorProtocol constructed without an IWifi
     auto resp = r.resp(R"({"id":1,"op":"wifi_status"})");

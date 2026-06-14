@@ -35,6 +35,13 @@ Setlist loadSetlistFromString(const std::string& setJsonText,
 ControllerState loadControllerStateFromString(const std::string& jsonText);
 ControllerState loadControllerStateFromFile(const std::string& path);
 
+// Returns midi_controller.json text with the current set/song/part updated under
+// current_settings.preset (read-modify-write: every other field is preserved
+// verbatim). This is the "save defaults" the Python rewrote on each change.
+// Throws if jsonText isn't valid JSON.
+std::string updateControllerDefaults(const std::string& jsonText, const std::string& currentSet,
+                                     const std::string& currentSong, const std::string& currentPart);
+
 // Utility: read a whole file into a string (throws std::runtime_error if missing).
 std::string readFile(const std::string& path);
 

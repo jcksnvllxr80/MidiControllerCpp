@@ -38,10 +38,17 @@ file(GLOB CORE_SRC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/config/*.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.cpp)
 file(GLOB MCU_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/adapters/mcu/*.cpp)
-# The editor link runs over the stdio USB CDC (StdioConfigTransport), so the
-# TinyUSB-descriptor UsbConfigTransport stub isn't built. (Kept on disk as an
-# alternative path for a dedicated CDC.)
-list(REMOVE_ITEM MCU_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/adapters/mcu/UsbConfigTransport.cpp)
+# Editor-link transport:
+#  - default: stdio USB CDC (StdioConfigTransport) — host connects via the Serial port.
+#  - -DMC_ENABLE_USB_EDITOR=ON: a raw TinyUSB VENDOR interface (UsbConfigTransport +
+#    usb/usb_descriptors.c, WinUSB via MS-OS-2.0) — host connects via the raw USB
+#    transport; stdio moves to UART. NOTE: written but unverified on hardware.
+option(MC_ENABLE_USB_EDITOR "Build the raw USB (vendor/WinUSB) editor link" OFF)
+if(MC_ENABLE_USB_EDITOR)
+    list(APPEND MCU_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/adapters/mcu/usb/usb_descriptors.c)
+else()
+    list(REMOVE_ITEM MCU_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/adapters/mcu/UsbConfigTransport.cpp)
+endif()
 
 add_executable(midicontroller_pico ${CORE_SRC} ${MCU_SRC} ${EMBEDDED_SRC})
 
@@ -56,23 +63,39 @@ target_link_libraries(midicontroller_pico
     hardware_pwm
     hardware_i2c
     hardware_timer
-    hardware_flash    # FlashKv persistence
+    hardware_flash     # FlashKv persistence
     hardware_sync
+    hardware_watchdog  # reliability watchdog (main loop)
+    pico_flash         # flash_safe_execute (XIP-safe erase/program)
     pico_cyw43_arch_lwip_poll  # WiFi (CYW43) + lwIP in poll mode
     pico_lwip_mdns)            # mDNS discovery
 
-# Name the USB serial device so it's identifiable in the editor's port list
-# (overrides the SDK's "Pico" default; both are #ifndef-guarded).
-target_compile_definitions(midicontroller_pico PRIVATE
-    USBD_PRODUCT="MidiController"
-    USBD_MANUFACTURER="MidiController"
-    # Transmit without requiring the host to assert DTR. serialport-rs (the editor
-    # app) doesn't raise DTR on open the way pyserial does; without this the Pico
-    # receives requests but suppresses its replies. See docs/mcu.md.
-    PICO_STDIO_USB_CONNECTION_WITHOUT_DTR=1)
+# Single-core firmware: core1 is never launched, so flash_safe_execute may run its
+# critical section by just disabling IRQs (no inter-core lockout victim needed). If
+# you ever start core1, remove this and call multicore_lockout_victim_init() there.
+target_compile_definitions(midicontroller_pico PRIVATE PICO_FLASH_ASSUME_CORE1_SAFE=1)
 
-# The editor link + debug both ride the USB CDC; the app's codec skips noise.
-pico_enable_stdio_usb(midicontroller_pico 1)
-pico_enable_stdio_uart(midicontroller_pico 0)
+if(MC_ENABLE_USB_EDITOR)
+    # Raw USB vendor link: our own TinyUSB descriptors (usb/), stdio on UART so
+    # the USB port carries only the vendor endpoints the host's nusb claims.
+    target_compile_definitions(midicontroller_pico PRIVATE MC_ENABLE_USB_EDITOR=1)
+    target_include_directories(midicontroller_pico PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/adapters/mcu/usb)  # tusb_config.h
+    target_link_libraries(midicontroller_pico tinyusb_device tinyusb_board)
+    pico_enable_stdio_usb(midicontroller_pico 0)
+    pico_enable_stdio_uart(midicontroller_pico 1)
+else()
+    # Editor link + debug both ride the SDK's stdio USB CDC; the app's codec skips
+    # noise. Name the serial device (overrides the SDK's "Pico" default; both are
+    # #ifndef-guarded) and transmit without requiring the host to assert DTR —
+    # serialport-rs doesn't raise DTR on open the way pyserial does, else the Pico
+    # receives requests but suppresses its replies. See docs/mcu.md.
+    target_compile_definitions(midicontroller_pico PRIVATE
+        USBD_PRODUCT="MidiController"
+        USBD_MANUFACTURER="MidiController"
+        PICO_STDIO_USB_CONNECTION_WITHOUT_DTR=1)
+    pico_enable_stdio_usb(midicontroller_pico 1)
+    pico_enable_stdio_uart(midicontroller_pico 0)
+endif()
 
 pico_add_extra_outputs(midicontroller_pico)  # .uf2 / .bin / .hex

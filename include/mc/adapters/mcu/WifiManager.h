@@ -48,8 +48,11 @@ public:
 private:
     void loadConfig();
     void saveConfig();
-    void connectNow();
-    void disconnectNow();
+    void startConnect();   // begin a non-blocking join attempt
+    void serviceLink();    // drive the connect/reconnect state machine (called from poll)
+    void onLinkUp();       // got an IP: bring up the TCP server + mDNS
+    void disconnectNow();  // user-initiated off: leave the network + tear everything down
+    void teardownNet();    // drop the TCP server/client but keep the radio
     void startServer();
     void startMdns();
     void emitStatus(const std::string& msg);
@@ -67,6 +70,12 @@ private:
     std::string ip_;
     bool inited_ = false;
     bool mdnsUp_ = false;
+
+    // Non-blocking connect/reconnect state machine (serviced in poll()).
+    enum class Link { Idle, Connecting, Up };
+    Link link_ = Link::Idle;
+    uint32_t connectStartMs_ = 0;  // when the current async attempt began
+    uint32_t lastAttemptMs_ = 0;   // last (re)try time, for retry backoff
 
     tcp_pcb* listen_ = nullptr;
     tcp_pcb* client_ = nullptr;

@@ -30,3 +30,21 @@ TEST(FsConfigStore, WriteReadExistsList) {
 
     fs::remove_all(base);
 }
+
+TEST(FsConfigStore, RemoveDeletesAndIsIdempotent) {
+    fs::path base = fs::temp_directory_path() / "mc_fscs_remove";
+    fs::remove_all(base);
+    sim::FsConfigStore store(base.string());
+
+    store.write("songs/Gone.json", "{}");
+    ASSERT_TRUE(store.exists("songs/Gone.json"));
+
+    store.remove("songs/Gone.json");
+    EXPECT_FALSE(store.exists("songs/Gone.json"));
+    EXPECT_TRUE(store.list("songs").empty());
+
+    store.remove("songs/Gone.json");          // removing a missing key is a no-op
+    store.remove("songs/NeverExisted.json");  // ...even one that never existed
+
+    fs::remove_all(base);
+}

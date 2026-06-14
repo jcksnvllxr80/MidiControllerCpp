@@ -32,6 +32,11 @@ void FsConfigStore::write(const std::string& key, const std::string& data) {
     out << data;
 }
 
+void FsConfigStore::remove(const std::string& key) {
+    std::error_code ec;
+    fs::remove(path(key), ec);  // idempotent: missing file -> false, no throw
+}
+
 std::vector<std::string> FsConfigStore::list(const std::string& subdir) const {
     std::vector<std::string> out;
     fs::path dir = path(subdir);
