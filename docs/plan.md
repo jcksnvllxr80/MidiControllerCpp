@@ -32,7 +32,10 @@ comes later. This plan covers the firmware only; the controller/editor app is a 
 - **Faithful-port decision:** observable MIDI is reproduced byte-for-byte, including the Python
   quirks (notably `Set Preset`'s `bank` uses `cc:0`, falsy in Python → bank select never sent;
   only the preset Program Change goes out). Documented in `docs/midi-protocol.md` and locked by tests.
-- **Phase 3 (mcu) — not started** (as planned).
+- **Phase 3 (mcu) — scaffolded.** Target board: **Pico 2 W (RP2350)**. `adapters/mcu/` + a Pico
+  `CMakeLists.txt` + `tools/embed_data.py` are in place, and the core is MCU-ready (`Transform`'s
+  `std::regex` replaced with a hand parser). nlohmann/json is kept (the RP2350's 520 KB RAM affords
+  it). Not yet built/flashed on-target. Stubs: OLED font, flash persistence, USB transport. See `docs/mcu.md`.
 
 ## What it does (so the model is clear)
 Data model: **Setlist → Songs → Parts**. A Part stores, per pedal, `(engaged, preset, params, settings)`. Loading a Part sends MIDI to set every pedal's on/off + preset (+ tempo). A **MidiPedal** has a name, a MIDI channel (1–16), and a per-pedal command map that turns high-level actions (Engage, Bypass, Set Preset, Set Tempo, knob/param tweaks) into MIDI CC/PC bytes. Footswitches step parts/songs; the rotary knob drives a menu for editing.
@@ -107,8 +110,12 @@ header (e.g. `nlohmann/json`) now; swap to a tiny MCU-friendly parser in Phase 3
 - **`ITempoOut` made explicit**: the 4 tempo outputs + tap tempo were Arduino-only before. Define the port now (set BPM / emit tap); sim adapter logs.
 - **Docs**: `architecture.excalidraw` (the diagram above), root `README.md` (build/test + layout, mermaid sequence of the event loop), short `domain.md`, `midi-protocol.md`, `config-format.md`. Concise — only what must be understood.
 
-## Phase 3 — Microcontroller (later, sketch only)
-Swap in `adapters/mcu/`: real GPIO for footswitches/encoder/LED, SSD1306 driver, **native** MIDI DIN (2×) and the 4 tempo 1/4" outputs (absorbing the Arduino's job), flash/SD `IConfigStore`, and **USB `IConfigTransport`** replacing WiFi/HTTP. Core and tests stay unchanged — that's the payoff of the HAL. Target board chosen here (user has ideas).
+## Phase 3 — Microcontroller (in progress — Pico 2 W / RP2350)
+Swap in `adapters/mcu/`: real GPIO for footswitches/encoder/LED, SSD1306 driver, **native** MIDI DIN (2×) and the 4 tempo 1/4" outputs (absorbing the Arduino's job), flash/SD `IConfigStore`, and **USB `IConfigTransport`**. Core and tests stay unchanged — that's the payoff of the HAL.
+
+Done: all 8 adapters scaffolded against the Pico SDK (`McuClock/McuMidiOut/TeeMidiOut/McuTempoOut/McuLed/McuInput/Ssd1306Display/McuConfigStore/Noop+UsbConfigTransport`), `Pins.h`, `main_mcu.cpp`, root `CMakeLists.txt` (board `pico2_w`, exceptions on), and `tools/embed_data.py` (bakes `data/*.json` into flash). `std::regex` removed from `Transform`. The desktop Makefile excludes `src/adapters/mcu/`; SDK-free MCU logic is host-tested.
+
+TODO before it runs on metal: a full 5x7 OLED font, LittleFS persistence for `McuConfigStore` writes, TinyUSB descriptors to enable `UsbConfigTransport`, and an on-target RAM check parsing BigSky. See `docs/mcu.md`.
 
 ## Tests (GoogleTest / GoogleMock)
 - **Unit** (`tests/unit/`): `Transform` parse+eval; `MidiMessage` byte exactness; `convert_to_int`/dict/min-max/on-off; Setlist/Song/Part JSON load; `ButtonSM` short/long/partner with a fake clock; `MenuTree` navigation; config loaders.

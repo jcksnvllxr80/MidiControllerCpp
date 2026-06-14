@@ -24,7 +24,8 @@ GTEST_INC := -I$(GTEST_DIR)/include -I$(GMOCK_DIR)/include
 GTEST_BUILD_INC := -I$(GTEST_DIR)/include -I$(GTEST_DIR) -I$(GMOCK_DIR)/include -I$(GMOCK_DIR)
 
 # --- sources -----------------------------------------------------------------
-ALL_SRC  := $(shell find src -name '*.cpp')
+# The desktop build excludes adapters/mcu (it needs the Pico SDK; built via CMake).
+ALL_SRC  := $(shell find src -name '*.cpp' -not -path 'src/adapters/mcu/*')
 LIB_SRC  := $(filter-out src/main.cpp,$(ALL_SRC))
 LIB_OBJ  := $(patsubst %.cpp,$(BUILD)/%.o,$(LIB_SRC))
 MAIN_OBJ := $(BUILD)/src/main.o
