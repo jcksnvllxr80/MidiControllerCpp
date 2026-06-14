@@ -156,3 +156,62 @@ TEST(Protocol, WritePedalPersistsToStore) {
     EXPECT_EQ(json::parse(tmp.read("pedals/X.json"))["Engage"]["cc"], 7);
     fs::remove_all(base);
 }
+
+TEST(Protocol, WifiUnsupportedWhenNoRadio) {
+    Rig r;  // EditorProtocol constructed without an IWifi
+    auto resp = r.resp(R"({"id":1,"op":"wifi_status"})");
+    EXPECT_EQ(resp["ok"], false);
+    EXPECT_NE(std::string(resp["error"]).find("wifi"), std::string::npos);
+}
+
+namespace {
+struct FakeWifi : IWifi {
+    WifiStatus st;
+    std::string lastPass;
+    void setCredentials(const std::string& ssid, const std::string& pass) override {
+        st.ssid = ssid;
+        lastPass = pass;
+        st.connected = true;
+        st.ip = "192.168.1.50";
+    }
+    void setEnabled(bool on) override {
+        st.enabled = on;
+        if (!on) {
+            st.connected = false;
+            st.ip = "";
+        }
+    }
+    WifiStatus status() const override { return st; }
+};
+}  // namespace
+
+TEST(Protocol, WifiSetEnableStatus) {
+    sim::FsConfigStore store{"data"};
+    RecordingMidiOut midi;
+    RecordingTempoOut tempo;
+    RecordingDisplay display;
+    NullLed led;
+    FakeClock clock;
+    sim::ScriptedInput input;
+    sim::NullConfigTransport tr;
+    Application app({&store, &midi, &tempo, &display, &led, &clock, &input, &tr});
+    app.setup();
+    FakeWifi wifi;
+    EditorProtocol proto(store, app, &wifi);
+
+    auto set = json::parse(proto.handleLine(R"({"id":1,"op":"wifi_set","ssid":"Net","password":"pw"})"));
+    EXPECT_EQ(set["ok"], true);
+    EXPECT_EQ(set["data"]["enabled"], true);
+    EXPECT_EQ(set["data"]["connected"], true);
+    EXPECT_EQ(set["data"]["ssid"], "Net");
+    EXPECT_EQ(set["data"]["ip"], "192.168.1.50");
+    EXPECT_EQ(wifi.lastPass, "pw");
+
+    auto off = json::parse(proto.handleLine(R"({"id":2,"op":"wifi_enable","on":false})"));
+    EXPECT_EQ(off["data"]["enabled"], false);
+    EXPECT_EQ(off["data"]["connected"], false);
+
+    auto st = json::parse(proto.handleLine(R"({"id":3,"op":"wifi_status"})"));
+    EXPECT_EQ(st["ok"], true);
+    EXPECT_EQ(st["data"]["enabled"], false);
+}

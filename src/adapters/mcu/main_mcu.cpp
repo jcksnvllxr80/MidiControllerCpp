@@ -18,6 +18,7 @@
 #include "mc/adapters/mcu/Pins.h"
 #include "mc/adapters/mcu/Ssd1306Display.h"
 #include "mc/adapters/mcu/StdioConfigTransport.h"
+#include "mc/adapters/mcu/WifiManager.h"
 #include "mc/app/Application.h"
 #include "mc/app/EditorProtocol.h"
 
@@ -51,14 +52,23 @@ int main() {
     Application app({&store, &midi, &tempo, &display, &led, &clock, &input, nullptr});
     app.setup();
 
-    EditorProtocol protocol(store, app);
-    StdioConfigTransport transport(protocol);
+    // WiFi: connects to a saved network on boot; the editor link also runs over
+    // TCP (same protocol) + mDNS. Credentials are set over USB the first time.
+    WifiManager wifi(store);
+    wifi.setStatusSink([&display](const std::string& s) { display.setMessage(s); });
+
+    EditorProtocol protocol(store, app, &wifi);
+    wifi.setProtocol(&protocol);
+
+    StdioConfigTransport transport(protocol);  // USB CDC link
     transport.begin();
+    wifi.begin();  // CYW43 init + auto-connect if a known network is enabled
 
     InputEvent ev;
     while (true) {
         while (input.poll(ev)) app.handleEvent(ev);
         transport.poll();
+        wifi.poll();
         tight_loop_contents();
     }
 }

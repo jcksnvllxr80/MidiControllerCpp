@@ -47,7 +47,8 @@ add_executable(midicontroller_pico ${CORE_SRC} ${MCU_SRC} ${EMBEDDED_SRC})
 
 target_include_directories(midicontroller_pico PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/adapters/mcu/wifi)  # lwipopts.h
 
 target_link_libraries(midicontroller_pico
     pico_stdlib
@@ -56,7 +57,9 @@ target_link_libraries(midicontroller_pico
     hardware_i2c
     hardware_timer
     hardware_flash    # FlashKv persistence
-    hardware_sync)
+    hardware_sync
+    pico_cyw43_arch_lwip_poll  # WiFi (CYW43) + lwIP in poll mode
+    pico_lwip_mdns)            # mDNS discovery
 
 # Name the USB serial device so it's identifiable in the editor's port list
 # (overrides the SDK's "Pico" default; both are #ifndef-guarded).

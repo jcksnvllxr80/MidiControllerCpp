@@ -14,13 +14,16 @@
 
 #include "mc/app/Application.h"
 #include "mc/ports/IConfigStore.h"
+#include "mc/ports/IWifi.h"
 
 namespace mc {
 
 class EditorProtocol {
 public:
-    EditorProtocol(IConfigStore& store, Application& app, std::string deviceName = "MidiController",
-                   std::string firmware = "cpp-0.1", int protocolVersion = 1);
+    // `wifi` is optional: when null, wifi_* ops report "unsupported".
+    EditorProtocol(IConfigStore& store, Application& app, IWifi* wifi = nullptr,
+                   std::string deviceName = "MidiController", std::string firmware = "cpp-0.1",
+                   int protocolVersion = 1);
 
     // Process one received line. Returns the response line (with trailing '\n'),
     // or "" for a blank / non-JSON "noise" line (nothing to send — the app's
@@ -30,6 +33,7 @@ public:
 private:
     IConfigStore& store_;
     Application& app_;
+    IWifi* wifi_;
     std::string name_;
     std::string firmware_;
     int version_;

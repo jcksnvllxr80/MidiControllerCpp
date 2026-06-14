@@ -17,10 +17,11 @@ json toArray(const std::vector<std::string>& v) {
 }
 }  // namespace
 
-EditorProtocol::EditorProtocol(IConfigStore& store, Application& app, std::string deviceName,
+EditorProtocol::EditorProtocol(IConfigStore& store, Application& app, IWifi* wifi, std::string deviceName,
                                std::string firmware, int protocolVersion)
     : store_(store),
       app_(app),
+      wifi_(wifi),
       name_(std::move(deviceName)),
       firmware_(std::move(firmware)),
       version_(protocolVersion) {}
@@ -88,6 +89,25 @@ std::string EditorProtocol::handleLine(const std::string& line) {
             app_.handleEvent({InputEvent::Type::FootswitchShort, button, 0.0});
             resp["ok"] = true;
             resp["data"] = {{"display_message", app_.displayedMessage()}};
+        } else if (op == "wifi_status" || op == "wifi_set" || op == "wifi_enable") {
+            if (!wifi_) {
+                resp["ok"] = false;
+                resp["error"] = "wifi unsupported on this build";
+            } else {
+                if (op == "wifi_set") {
+                    wifi_->setCredentials(req.at("ssid").get<std::string>(),
+                                          req.value("password", std::string()));
+                    wifi_->setEnabled(true);
+                } else if (op == "wifi_enable") {
+                    wifi_->setEnabled(req.value("on", true));
+                }
+                WifiStatus s = wifi_->status();
+                resp["ok"] = true;
+                resp["data"] = {{"enabled", s.enabled},
+                                {"connected", s.connected},
+                                {"ssid", s.ssid},
+                                {"ip", s.ip}};
+            }
         } else {
             resp["ok"] = false;
             resp["error"] = "unsupported op: " + op;
