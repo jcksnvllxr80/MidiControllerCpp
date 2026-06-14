@@ -6,7 +6,7 @@ the **ports** (interfaces). Adapters implement the ports for a target; the
 
 ```mermaid
 flowchart TB
-    EXT["external editor (separate project)"] -- "USB IConfigTransport" --> APP
+    EXT["external editor (separate project)"] -- "USB / WiFi editor link" --> APP
 
     subgraph APP["app/ Application — composition root + event loop"]
       L["poll input → button/encoder handler → mutate state → display → emit MIDI/tempo"]
@@ -16,6 +16,7 @@ flowchart TB
       direction LR
       IMidiOut & ITempoOut & IDisplay & ILed
       IInput & IClock & IConfigStore & IConfigTransport
+      IWifi & ISystemControl
     end
 
     subgraph SIM["adapters/sim (now)"]
@@ -27,7 +28,8 @@ flowchart TB
     subgraph MCU["adapters/mcu (Phase 3)"]
       direction LR
       GPIO["GPIO footswitches/encoder/LED"] & OLED["SSD1306"]
-      DIN["MIDI DIN x2 + 4 tempo jacks"] & STORE["flash/SD + USB transport"]
+      DIN["MIDI DIN x2 + 4 tempo jacks"] & STORE["FlashKv store + watchdog"]
+      LINK["editor link: USB CDC + WiFi/mDNS :8080"]
     end
 
     subgraph CORE["domain/ (pure C++, no hardware, no JSON)"]

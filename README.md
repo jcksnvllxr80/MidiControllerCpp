@@ -33,9 +33,9 @@ include/mc/   headers: domain/ ports/ config/ adapters/ app/
 src/          implementations + main.cpp
 data/         config as JSON: midi_controller.json, pedals/, songs/, sets/
 tests/        unit/ mock/ e2e/ support/
-tools/        yaml2json.py (one-shot YAML->JSON converter)
+tools/        yaml2json.py (YAML→JSON), embed_data.py (bake data into flash), gen_font.py, gen_wiring_excalidraw.py
 third_party/  vendored googletest + nlohmann/json
-docs/         plan, architecture, domain, midi-protocol, config-format
+docs/         plan, architecture, domain, midi-protocol, config-format, mcu, wiring, wifi-app-handoff
 ```
 
 ## Notes
@@ -50,3 +50,6 @@ docs/         plan, architecture, domain, midi-protocol, config-format
 - [docs/domain.md](docs/domain.md) — the core modules
 - [docs/midi-protocol.md](docs/midi-protocol.md) — byte construction & dispatch
 - [docs/config-format.md](docs/config-format.md) — JSON config reference
+- [docs/mcu.md](docs/mcu.md) — firmware build/flash, adapters, hardware status
+- [docs/wiring.md](docs/wiring.md) — Pico 2 W pin map, parts, power (+ `wiring.excalidraw` diagram)
+- [docs/wifi-app-handoff.md](docs/wifi-app-handoff.md) — editor-app protocol contract (WiFi, device discovery, firmware update)

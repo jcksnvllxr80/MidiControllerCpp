@@ -78,6 +78,7 @@ one, which is a stub for CDC devices).
 | `EditorProtocol` (app) | — | newline-JSON request/response; shared by the USB and WiFi links |
 | `StdioConfigTransport` | IConfigTransport | runs `EditorProtocol` over the USB CDC |
 | `WifiManager` | IWifi | CYW43 STA join, lwIP TCP server (same protocol) on `:8080`, mDNS, creds in flash |
+| `McuSystemControl` | ISystemControl | `reboot` (app) / `reboot_bootloader` (USB BOOTSEL via `reset_usb_boot`); reset deferred so the editor ack flushes first |
 
 Pin assignments live in one place: `include/mc/adapters/mcu/Pins.h` — edit to match your
 wiring. The full build (pin map, external parts, power, diagram) is in [`wiring.md`](wiring.md).
@@ -102,9 +103,10 @@ far they're verified:
   A second **raw-USB** path was added (`-DMC_ENABLE_USB_EDITOR=ON`): a vendor-class
   interface (`usb/usb_descriptors.c` + `UsbConfigTransport`, bulk IN/OUT) with
   MS-OS-2.0 descriptors so Windows auto-binds **WinUSB**, for the host app's `nusb`
-  transport. **Unverified on hardware** (no SDK/board; `PICO_SDK_PATH` unset in WSL).
-  Must match host `transport/usb.rs`: VID 0xCAFE/PID 0x4001, iface 0, EP OUT 0x01 /
-  IN 0x81; stdio moves to UART in that build.
+  transport. **Unverified on hardware** (the verified link is the default CDC build;
+  select this variant with `-DMC_ENABLE_USB_EDITOR=ON`). Must match host
+  `transport/usb.rs`: VID 0xCAFE/PID 0x4001, iface 0, EP OUT 0x01 / IN 0x81; stdio
+  moves to UART in that build.
 - **Flash persistence** — DONE (codec host-tested) and in use: WiFi creds *and* the
   "save defaults" (current set/song/part, written back debounced on change) persist
   via `FlashKv`. Erase/program now goes through `flash_safe_execute()` (XIP-safe;

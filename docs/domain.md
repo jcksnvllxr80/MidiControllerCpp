@@ -32,9 +32,11 @@ These are intentional, documented, and covered by tests.
   (the densest, most device-specific Python) is not ported; the navigation engine
   that powered it *is*, and the Set/Song/Part/Knob/Lock menus are wired and
   tested.
-- **Defaults are not auto-persisted.** Python rewrote `midi_controller.yaml` on
-  every part load. The sim does not (to avoid mutating the shared fixture);
-  `IConfigStore::write` exists and is tested, ready to wire up.
+- **Defaults persistence differs by target.** Python rewrote `midi_controller.yaml`
+  on every part load. The firmware now does this too, but **debounced**: the current
+  set/song/part are flushed via `Application::tick()` after ~1.5 s idle, so a flash
+  write never lands mid-performance. The desktop sim deliberately does *not* persist,
+  to avoid mutating the shared `data/` fixture.
 
 See [`midi-protocol.md`](midi-protocol.md) for the byte-level dispatch and the
 faithful quirks.
