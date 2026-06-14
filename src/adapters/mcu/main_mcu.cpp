@@ -17,15 +17,9 @@
 #include "mc/adapters/mcu/McuTempoOut.h"
 #include "mc/adapters/mcu/Pins.h"
 #include "mc/adapters/mcu/Ssd1306Display.h"
+#include "mc/adapters/mcu/StdioConfigTransport.h"
 #include "mc/app/Application.h"
-
-#if MC_ENABLE_USB_EDITOR
-#include "mc/adapters/mcu/UsbConfigTransport.h"
-using EditorTransport = mc::mcu::UsbConfigTransport;
-#else
-#include "mc/adapters/mcu/NoopConfigTransport.h"
-using EditorTransport = mc::mcu::NoopConfigTransport;
-#endif
+#include "mc/app/EditorProtocol.h"
 
 using namespace mc;
 using namespace mc::mcu;
@@ -44,7 +38,6 @@ int main() {
     // Persist "save defaults" in the last flash sector (survives reboot).
     FlashKv persist(PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE);
     McuConfigStore store(kEmbeddedData, kEmbeddedDataCount, &persist);
-    EditorTransport transport;  // Noop unless built with -DMC_ENABLE_USB_EDITOR
 
     midiA.begin();
     midiB.begin();
@@ -53,9 +46,14 @@ int main() {
     led.begin();
     input.begin();
 
-    Application app({&store, &midi, &tempo, &display, &led, &clock, &input, &transport});
-    transport.begin();
+    // The Application drives the rig; the loop also services the editor link over
+    // the USB CDC. (Transport isn't passed to the Application — we run the loop.)
+    Application app({&store, &midi, &tempo, &display, &led, &clock, &input, nullptr});
     app.setup();
+
+    EditorProtocol protocol(store, app);
+    StdioConfigTransport transport(protocol);
+    transport.begin();
 
     InputEvent ev;
     while (true) {

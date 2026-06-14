@@ -38,7 +38,9 @@ file(GLOB CORE_SRC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/config/*.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.cpp)
 file(GLOB MCU_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/adapters/mcu/*.cpp)
-# UsbConfigTransport is opt-in (needs TinyUSB descriptors); add it below if enabled.
+# The editor link runs over the stdio USB CDC (StdioConfigTransport), so the
+# TinyUSB-descriptor UsbConfigTransport stub isn't built. (Kept on disk as an
+# alternative path for a dedicated CDC.)
 list(REMOVE_ITEM MCU_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/adapters/mcu/UsbConfigTransport.cpp)
 
 add_executable(midicontroller_pico ${CORE_SRC} ${MCU_SRC} ${EMBEDDED_SRC})
@@ -56,23 +58,14 @@ target_link_libraries(midicontroller_pico
     hardware_flash    # FlashKv persistence
     hardware_sync)
 
-# The USB editor link (CDC). OFF by default because the descriptors are standard
-# boilerplate that hasn't been validated on hardware here. When OFF, stdio uses
-# USB (handy for debug); when ON, stdio moves to UART so the CDC is free.
-option(MC_ENABLE_USB_EDITOR "Build the USB CDC editor transport (TinyUSB)" OFF)
-if(MC_ENABLE_USB_EDITOR)
-    target_sources(midicontroller_pico PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/adapters/mcu/UsbConfigTransport.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/adapters/mcu/usb/usb_descriptors.c)
-    target_include_directories(midicontroller_pico PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/adapters/mcu/usb)  # tusb_config.h
-    target_compile_definitions(midicontroller_pico PRIVATE MC_ENABLE_USB_EDITOR=1)
-    target_link_libraries(midicontroller_pico tinyusb_device tinyusb_board)
-    pico_enable_stdio_usb(midicontroller_pico 0)
-    pico_enable_stdio_uart(midicontroller_pico 1)
-else()
-    pico_enable_stdio_usb(midicontroller_pico 1)
-    pico_enable_stdio_uart(midicontroller_pico 0)
-endif()
+# Name the USB serial device so it's identifiable in the editor's port list
+# (overrides the SDK's "Pico" default; both are #ifndef-guarded).
+target_compile_definitions(midicontroller_pico PRIVATE
+    USBD_PRODUCT="MidiController"
+    USBD_MANUFACTURER="MidiController")
+
+# The editor link + debug both ride the USB CDC; the app's codec skips noise.
+pico_enable_stdio_usb(midicontroller_pico 1)
+pico_enable_stdio_uart(midicontroller_pico 0)
 
 pico_add_extra_outputs(midicontroller_pico)  # .uf2 / .bin / .hex

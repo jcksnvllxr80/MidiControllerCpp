@@ -171,19 +171,17 @@ void Application::loadPart() {
 std::string Application::songInfoString(const Song& s, const Part& p) const {
     return s.name + " - " + s.bpm + "BPM - " + p.name;
 }
-void Application::setSongInfoMessage() {
-    if (p_.display) p_.display->setMessage(songInfoString(currentSong(), currentPart()));
+void Application::show(const std::string& msg) {
+    lastMessage_ = msg;  // so displayedMessage() (and the editor link) can read it back
+    if (p_.display) p_.display->setMessage(msg);
 }
-void Application::previewMessage() {
-    if (p_.display) p_.display->setMessage(songInfoString(displayedSong(), displayedPart()));
-}
+void Application::setSongInfoMessage() { show(songInfoString(currentSong(), currentPart())); }
+void Application::previewMessage() { show(songInfoString(displayedSong(), displayedPart())); }
 
 // --- menu wiring -------------------------------------------------------------
 
 void Application::buildMenu() {
-    menu_.setSink([this](const std::string& m) {
-        if (p_.display) p_.display->setMessage(m);
-    });
+    menu_.setSink([this](const std::string& m) { show(m); });
     menu_.setRootMessage([this] { return songInfoString(currentSong(), currentPart()); });
 
     setupMenu_ = menu_.root()->addChild("Setup");

@@ -59,6 +59,7 @@ public:
     const std::string& currentPartName() const { return currentPart().name; }
     const std::string& displayedSongName() const { return displayedSong().name; }
     const std::string& displayedPartName() const { return displayedPart().name; }
+    const std::string& displayedMessage() const { return lastMessage_; }  // last text shown
     bool quitRequested() const { return quitRequested_; }
 
     // Navigation, exposed so tests/menus can drive them directly.
@@ -81,6 +82,7 @@ private:
     void changeAndSelect(const std::string& fn);
     void setSongInfoMessage();
     void previewMessage();
+    void show(const std::string& msg);  // route all display text through here
     std::string songInfoString(const Song& s, const Part& p) const;
     void buildMenu();
 
@@ -95,6 +97,7 @@ private:
     int displayedSongIdx_ = 0;
     int displayedPartIdx_ = 0;
     bool quitRequested_ = false;
+    std::string lastMessage_;
 
     MenuTree menu_{"MidiController"};
     MenuNode* setupMenu_ = nullptr;
