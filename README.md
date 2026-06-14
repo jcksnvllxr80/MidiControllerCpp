@@ -1,5 +1,7 @@
 # MidiController (C++)
 
+[![CI](https://github.com/jcksnvllxr80/MidiControllerCpp/actions/workflows/ci.yml/badge.svg)](https://github.com/jcksnvllxr80/MidiControllerCpp/actions/workflows/ci.yml)
+
 Portable C++17 rewrite of a guitar-pedal MIDI controller's brain, ported from the
 Raspberry Pi Python version. Hexagonal design: a hardware-free domain core with all
 I/O behind interfaces, so the same code runs on the desktop sim now and a
@@ -25,6 +27,14 @@ make clean       # remove desktop build/ ;  make pico-clean removes build-pico/
 ```
 
 Flashing and wiring: [docs/mcu.md](docs/mcu.md) and [docs/wiring.md](docs/wiring.md).
+
+## CI & releases
+
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the host test
+suite and builds the firmware `.uf2` on every push and PR. On a push to `master`, once both
+pass, it cuts a GitHub **Release** `v<VERSION>` (from the [`VERSION`](VERSION) file) with the
+versioned `.uf2` attached — **only when `VERSION` changed** (the tag is new). To ship: bump
+`VERSION` and merge to `master`.
 
 ## Layout
 
