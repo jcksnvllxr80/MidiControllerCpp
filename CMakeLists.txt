@@ -66,6 +66,8 @@ target_link_libraries(midicontroller_pico
     hardware_flash     # FlashKv persistence
     hardware_sync
     hardware_watchdog  # reliability watchdog (main loop)
+    pico_bootrom       # reset_usb_boot — reboot to USB BOOTSEL on command
+    pico_unique_id     # board id surfaced in `identify`
     pico_flash         # flash_safe_execute (XIP-safe erase/program)
     pico_cyw43_arch_lwip_poll  # WiFi (CYW43) + lwIP in poll mode
     pico_lwip_mdns)            # mDNS discovery

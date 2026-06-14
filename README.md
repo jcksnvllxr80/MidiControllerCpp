@@ -5,21 +5,26 @@ Raspberry Pi Python version. Hexagonal design: a hardware-free domain core with 
 I/O behind interfaces, so the same code runs on the desktop sim now and a
 microcontroller later.
 
-Status: domain core + config + simulator are done and tested. Microcontroller
-adapters are not started. (The editor app is a separate project.)
+Status: domain core + config + simulator are done and tested; the microcontroller
+firmware (Pico 2 W / RP2350) builds and is under hardware bring-up. (The editor app
+is a separate project.)
 Roadmap: [docs/plan.md](docs/plan.md).
 
 ## Build, test, run (WSL)
 
-Needs `g++` (C++17) and `make`. GoogleTest and nlohmann/json are vendored, so there
-are no other dependencies.
+The **firmware** builds with CMake + the Pico SDK; the **simulator** and the **tests**
+build with `g++` (C++17) — GoogleTest and nlohmann/json are vendored, so the host
+build has no other dependencies.
 
 ```sh
-make build   # -> build/midicontroller
-make test    # build & run all tests (unit + mock + e2e)
-make run     # run the simulator on data/ (scripted demo)
-make clean
+make build       # firmware  -> build-pico/midicontroller_pico.uf2  (Pico 2 W; needs PICO_SDK_PATH)
+make build-sim   # simulator  -> build/midicontroller
+make test        # build & run all tests (unit + mock + e2e)
+make run         # run the simulator on data/ (scripted demo)
+make clean       # remove desktop build/ ;  make pico-clean removes build-pico/
 ```
+
+Flashing and wiring: [docs/mcu.md](docs/mcu.md) and [docs/wiring.md](docs/wiring.md).
 
 ## Layout
 

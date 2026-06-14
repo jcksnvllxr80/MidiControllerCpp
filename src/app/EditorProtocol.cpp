@@ -17,11 +17,12 @@ json toArray(const std::vector<std::string>& v) {
 }
 }  // namespace
 
-EditorProtocol::EditorProtocol(IConfigStore& store, Application& app, IWifi* wifi, std::string deviceName,
-                               std::string firmware, int protocolVersion)
+EditorProtocol::EditorProtocol(IConfigStore& store, Application& app, IWifi* wifi, ISystemControl* sys,
+                               std::string deviceName, std::string firmware, int protocolVersion)
     : store_(store),
       app_(app),
       wifi_(wifi),
+      sys_(sys),
       name_(std::move(deviceName)),
       firmware_(std::move(firmware)),
       version_(protocolVersion) {}
@@ -46,7 +47,10 @@ std::string EditorProtocol::handleLine(const std::string& line) {
         auto name = [&] { return req.at("name").get<std::string>(); };
         if (op == "identify") {
             resp["ok"] = true;
-            resp["data"] = {{"name", name_}, {"firmware", firmware_}, {"protocol_version", version_}};
+            resp["data"] = {{"name", name_},
+                            {"firmware", firmware_},
+                            {"protocol_version", version_},
+                            {"device_id", deviceId_}};  // stable per-unit id for USB/WiFi dedupe
         } else if (op == "ping") {
             resp["ok"] = true;
         } else if (op == "list_sets") {
@@ -132,6 +136,15 @@ std::string EditorProtocol::handleLine(const std::string& line) {
                                 {"connected", s.connected},
                                 {"ssid", s.ssid},
                                 {"ip", s.ip}};
+            }
+        } else if (op == "reboot_bootloader" || op == "reboot") {
+            if (!sys_) {
+                resp["ok"] = false;
+                resp["error"] = "reboot unsupported on this build";
+            } else {
+                resp["ok"] = true;  // ack now; the device resets shortly after this flushes
+                if (op == "reboot_bootloader") sys_->rebootToBootloader();  // -> USB BOOTSEL
+                else sys_->reboot();                                        // -> app restart
             }
         } else {
             resp["ok"] = false;

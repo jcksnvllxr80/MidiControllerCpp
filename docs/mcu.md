@@ -26,6 +26,9 @@ cd /mnt/c/Users/A-A-Ron/git/MidiControllerCpp/MidiControllerCpp
 cmake -B build-pico -DPICO_BOARD=pico2_w
 cmake --build build-pico -j        # -> build-pico/midicontroller_pico.uf2
 ```
+Or just **`make build`** from the repo root — it wraps the two commands above and
+defaults `PICO_SDK_PATH` to `$HOME/pico-sdk` (override: `make build PICO_SDK_PATH=...`).
+(`make build-sim` builds the desktop simulator instead; `make pico-clean` wipes `build-pico/`.)
 The editor link (and debug output) run over the USB CDC automatically — no flag
 needed. WiFi (CYW43 + lwIP + mDNS) is built in too (the board is `pico2_w`).
 CMake runs `tools/embed_data.py` (needs Python 3) to bake `data/*.json` into flash;
@@ -91,7 +94,11 @@ far they're verified:
   `delete_song`/`delete_pedal`/`delete_part` and `write_part` (via the new
   `IConfigStore::remove`; the flash store tombstones build-time-embedded entries
   since their blobs can't be erased). `write_part`/`delete_part` read-modify-write
-  the song file (parts have no file of their own).
+  the song file (parts have no file of their own). Also `reboot_bootloader` (drops
+  into USB BOOTSEL via `reset_usb_boot` — flash a `.uf2` with no front button) and
+  `reboot`, both behind `ISystemControl`/`McuSystemControl` (the reset is deferred a
+  few ms so the ack flushes first). `identify` now also returns a `device_id` (the
+  RP2350 board id) so the editor can dedupe one unit seen over both USB and WiFi.
   A second **raw-USB** path was added (`-DMC_ENABLE_USB_EDITOR=ON`): a vendor-class
   interface (`usb/usb_descriptors.c` + `UsbConfigTransport`, bulk IN/OUT) with
   MS-OS-2.0 descriptors so Windows auto-binds **WinUSB**, for the host app's `nusb`

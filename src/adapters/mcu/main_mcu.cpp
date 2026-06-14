@@ -9,6 +9,7 @@
 #include "hardware/flash.h"  // FLASH_SECTOR_SIZE, PICO_FLASH_SIZE_BYTES
 #include "hardware/watchdog.h"
 #include "pico/stdlib.h"
+#include "pico/unique_id.h"  // pico_get_unique_board_id_string
 
 #include "mc/adapters/mcu/EmbeddedData.h"
 #include "mc/adapters/mcu/FlashKv.h"
@@ -17,6 +18,7 @@
 #include "mc/adapters/mcu/McuInput.h"
 #include "mc/adapters/mcu/McuLed.h"
 #include "mc/adapters/mcu/McuMidiOut.h"
+#include "mc/adapters/mcu/McuSystemControl.h"
 #include "mc/adapters/mcu/McuTempoOut.h"
 #include "mc/adapters/mcu/Pins.h"
 #include "mc/adapters/mcu/Ssd1306Display.h"
@@ -70,7 +72,15 @@ int main() {
     WifiManager wifi(store);
     wifi.setStatusSink([&display](const std::string& s) { display.setMessage(s); });
 
-    EditorProtocol protocol(store, app, &wifi);
+    McuSystemControl sys;  // reboot / BOOTSEL on editor command
+    EditorProtocol protocol(store, app, &wifi, &sys);
+
+    // Surface the RP2350 board id in `identify` so the editor can tell units apart
+    // and dedupe the same device seen over both USB and WiFi.
+    char boardId[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1];
+    pico_get_unique_board_id_string(boardId, sizeof(boardId));
+    protocol.setDeviceId(boardId);
+
     wifi.setProtocol(&protocol);
 
 #ifdef MC_ENABLE_USB_EDITOR
@@ -94,6 +104,7 @@ int main() {
         transport.poll();
         wifi.poll();
         app.tick();  // debounced "save defaults" flush, off the input path
+        sys.poll();  // performs a scheduled reboot/BOOTSEL once the ack has flushed
         tight_loop_contents();
     }
 }

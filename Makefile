@@ -1,10 +1,15 @@
-# MidiController C++ firmware — build in WSL (g++ C++17). No apt deps:
-# googletest/googlemock and nlohmann/json are vendored under third_party/.
+# MidiController C++ — build in WSL. Two builds, two outputs:
 #
-#   make build   compile the sim app  -> build/midicontroller
-#   make test    build & run all unit/mock/e2e suites
-#   make run     launch the simulator (reads data/)
-#   make clean   remove build artifacts
+#   make build       compile the FIRMWARE    -> build-pico/midicontroller_pico.uf2  (Pico 2 W; needs Pico SDK)
+#   make build-sim   compile the desktop SIM -> build/midicontroller                (host g++ C++17)
+#   make test        build & run all unit/mock/e2e suites (host)
+#   make run         launch the simulator (reads data/)
+#   make clean       remove the desktop build/ artifacts
+#   make pico-clean  remove the firmware build-pico/ artifacts
+#
+# googletest/googlemock and nlohmann/json are vendored under third_party/ (no apt deps for the host build).
+# The firmware build needs PICO_SDK_PATH (defaults to $HOME/pico-sdk); override with:
+#   make build PICO_SDK_PATH=/path/to/pico-sdk
 
 CXX      ?= g++
 CXXSTD   := -std=c++17
@@ -13,6 +18,12 @@ CXXFLAGS := $(CXXSTD) $(WARN) -O0 -g -MMD -MP
 LDFLAGS  := -pthread
 
 BUILD := build
+
+# Firmware (Pico) build — delegated to CMakeLists.txt in a separate dir.
+PICO_SDK_PATH ?= $(HOME)/pico-sdk
+export PICO_SDK_PATH
+PICO_BUILD := build-pico
+PICO_UF2   := $(PICO_BUILD)/midicontroller_pico.uf2
 
 INC := -Iinclude -Ithird_party
 
@@ -39,8 +50,24 @@ APP     := $(BUILD)/midicontroller
 TESTBIN := $(BUILD)/midicontroller_tests
 
 # --- top-level targets -------------------------------------------------------
-.PHONY: build test run clean
-build: $(APP)
+.PHONY: build build-sim test run clean pico-clean
+
+# Default target: build the FIRMWARE .uf2 for the Pico 2 W (RP2350) via CMake.
+build:
+	@if [ ! -d "$(PICO_SDK_PATH)" ]; then \
+		echo "ERROR: Pico SDK not found at PICO_SDK_PATH=$(PICO_SDK_PATH)"; \
+		echo "  set it, e.g.:  make build PICO_SDK_PATH=/path/to/pico-sdk"; \
+		echo "  (for the desktop simulator instead, run:  make build-sim)"; \
+		exit 1; \
+	fi
+	@if [ ! -f $(PICO_BUILD)/CMakeCache.txt ]; then \
+		cmake -B $(PICO_BUILD) -DPICO_BOARD=pico2_w; \
+	fi
+	cmake --build $(PICO_BUILD) -j
+	@echo "=== built $(PICO_UF2) ==="
+
+# Desktop simulator (host g++; no Pico SDK needed).
+build-sim: $(APP)
 
 test: $(TESTBIN)
 	@echo "=== running tests ==="
@@ -51,6 +78,10 @@ run: $(APP)
 
 clean:
 	rm -rf $(BUILD)
+
+# Firmware build dir is separate (and slow to regenerate — it rebuilds the SDK).
+pico-clean:
+	rm -rf $(PICO_BUILD)
 
 # --- link --------------------------------------------------------------------
 $(APP): $(LIB_OBJ) $(MAIN_OBJ)

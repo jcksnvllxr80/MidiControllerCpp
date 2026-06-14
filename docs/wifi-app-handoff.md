@@ -61,7 +61,7 @@ framing).
 
 | `op` | request fields | `data` on success | notes |
 |---|---|---|---|
-| `identify` | — | `{"name","firmware","protocol_version"}` | matches `DeviceIdentity`; use to confirm the device |
+| `identify` | — | `{"name","firmware","protocol_version","device_id"}` | confirm a device; `device_id` is a stable per-unit id (RP2350 board id) for USB/WiFi dedupe |
 | `ping` | — | *(none)* | heartbeat |
 | `list_sets` / `list_songs` / `list_pedals` | — | array of name strings | |
 | `get_set` / `get_song` / `get_pedal` | `name` | that file's JSON object | the stored config, verbatim |
@@ -74,6 +74,8 @@ framing).
 | `wifi_set` | `ssid`, `password` (optional) | `{"enabled","connected","ssid","ip"}` | saves creds, enables, connects |
 | `wifi_status` | — | `{"enabled","connected","ssid","ip"}` | |
 | `wifi_enable` | `on` (bool) | `{"enabled","connected","ssid","ip"}` | persisted on/off |
+| `reboot_bootloader` | — | *(none)* | acks, then ~100 ms later resets into USB BOOTSEL (mass storage) to accept a `.uf2` — no front button |
+| `reboot` | — | *(none)* | acks, then reboots into the application |
 
 **Editing semantics (parts live inside songs).** There are no per-part files, so
 `write_part` / `delete_part` do a read-modify-write of `songs/<song>.json`: the
@@ -115,12 +117,67 @@ Because `codec.rs` is transport-agnostic (`Read`/`Write`), this is essentially
   `data.ip` / `data.connected`. Add a toggle that sends `wifi_enable {on}`.
 - Optional: a `wifi_status` poll to reflect connection state.
 
+## Task 3 — device discovery & filtering (show only MidiControllers)
+
+The device list must contain **only** MidiControllers — over **both** USB/serial and
+WiFi — and never random serial/USB gear. Discover on both transports, confirm with
+`identify`, dedupe by `device_id`.
+
+**USB / serial.** Enumerate serial ports; `serialport-rs` gives `UsbPortInfo { vid, pid,
+product, manufacturer, serial_number }`. Cheap pre-filter (no I/O — never poke unknown
+devices):
+- **CDC build (default):** keep ports where `vid == 0x2E8A` (Raspberry Pi) **and**
+  `product == "MidiController"` (manufacturer is also "MidiController"). Rejects non-Pico
+  devices (other VID) and other Pico projects (other product string).
+- **Raw-USB build (`MC_ENABLE_USB_EDITOR`):** keep `vid == 0xCAFE && pid == 0x4001`.
+
+**WiFi.** Browse mDNS for `_midicontroller._tcp` (e.g. crate `mdns-sd`). Every hit is
+already a MidiController (only this firmware advertises that service) — resolve host+port
+and treat it as a candidate; no metadata pre-filter needed.
+
+**Confirm (authoritative, both transports).** Open each *candidate* and send
+`{"op":"identify"}`; keep it only if it replies `{"ok":true,"data":{"name":
+"MidiController","protocol_version":N,"device_id":"…"}}`. Only probe pre-filtered/mDNS
+candidates — don't blast `identify` at arbitrary serial ports (it can disrupt other gear).
+
+**Dedupe.** The same physical unit can appear on USB *and* WiFi at once. Key the list by
+`device_id` (the RP2350 board id — identical on both links) and merge into one entry. Two
+*different* units have different `device_id`s even though both report `name ==
+"MidiController"`, so `device_id` is also how you tell units apart.
+
+## Task 4 — firmware update without the BOOTSEL button
+
+The firmware drops itself into the UF2 bootloader on command (over USB *and* WiFi), so
+users never touch the board:
+
+1. App sends `{"op":"reboot_bootloader"}`. Firmware replies `{"ok":true}` and ~100 ms
+   later resets into BOOTSEL. **Expect the serial/TCP connection to drop right after the
+   ack** — that's success, not an error; tear the transport down cleanly.
+2. ~1 s later a USB **mass-storage** drive appears: `vid == 0x2E8A`, `pid == 0x000F`
+   (RP2350; RP2040 is `0x0003`), volume label **`RP2350`**. In this state it's
+   indistinguishable from any RP2350 in BOOTSEL — present it as "RP2350 bootloader —
+   ready to flash".
+3. Copy `midicontroller_pico.uf2` onto that drive (a plain file copy flashes it), or shell
+   out to `picotool load -x firmware.uf2`. The board reboots into the new firmware and
+   re-appears in the list with the same `device_id`.
+4. `{"op":"reboot"}` is a soft restart into the app (no flashing) — handy after a config
+   change or to recover.
+
+> Over WiFi, `reboot_bootloader` still drops the device into USB mass-storage mode, so the
+> actual `.uf2` delivery needs a USB cable. The remote command is still useful to *prep*
+> a cabled flash, but don't promise wireless flashing.
+
 ## Acceptance
 
 - Set credentials over USB → firmware reports an IP.
 - The app's WiFi scan lists the device (via mDNS) and connects to it over TCP.
 - All existing ops (`list_*`, `get_*`, `dpad`, `short`, …) work identically over
   WiFi — same `codec`, just a different socket.
+- The device list shows the MidiController over USB **and** over WiFi, deduped to one
+  entry by `device_id`, and shows nothing else that's plugged in.
+- "Update firmware" sends `reboot_bootloader`; the device re-appears as an `RP2350`
+  drive and copying `midicontroller_pico.uf2` flashes it; it returns with the same
+  `device_id`.
 
 ## Gotchas
 

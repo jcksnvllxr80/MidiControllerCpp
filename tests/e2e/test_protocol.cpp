@@ -50,6 +50,7 @@ TEST(Protocol, IdentifyReturnsDeviceIdentity) {
     EXPECT_EQ(resp["data"]["name"], "MidiController");
     EXPECT_TRUE(resp["data"]["firmware"].is_string());
     EXPECT_TRUE(resp["data"]["protocol_version"].is_number());  // DeviceIdentity shape
+    EXPECT_TRUE(resp["data"]["device_id"].is_string());         // per-unit id for USB/WiFi dedupe
 }
 
 TEST(Protocol, ResponseIsSingleNewlineTerminatedLine) {
@@ -258,4 +259,30 @@ TEST(Protocol, WifiSetEnableStatus) {
     auto st = json::parse(proto.handleLine(R"({"id":3,"op":"wifi_status"})"));
     EXPECT_EQ(st["ok"], true);
     EXPECT_EQ(st["data"]["enabled"], false);
+}
+
+namespace {
+struct FakeSystem : ISystemControl {
+    int bootloaderCalls = 0;
+    int rebootCalls = 0;
+    void rebootToBootloader() override { ++bootloaderCalls; }
+    void reboot() override { ++rebootCalls; }
+};
+}  // namespace
+
+TEST(Protocol, RebootOpsInvokeSystemControl) {
+    Rig r;
+    FakeSystem sys;
+    EditorProtocol p(r.store, r.app, nullptr, &sys);
+    EXPECT_EQ(json::parse(p.handleLine(R"({"id":1,"op":"reboot_bootloader"})"))["ok"], true);
+    EXPECT_EQ(sys.bootloaderCalls, 1);
+    EXPECT_EQ(json::parse(p.handleLine(R"({"id":2,"op":"reboot"})"))["ok"], true);
+    EXPECT_EQ(sys.rebootCalls, 1);
+}
+
+TEST(Protocol, RebootUnsupportedWithoutSystemControl) {
+    Rig r;  // proto built without an ISystemControl
+    auto resp = r.resp(R"({"id":1,"op":"reboot_bootloader"})");
+    EXPECT_EQ(resp["ok"], false);
+    EXPECT_TRUE(resp["error"].is_string());
 }

@@ -123,7 +123,7 @@ TODO before it runs on metal: a full 5x7 OLED font, LittleFS persistence for `Mc
 - **E2E** (`tests/e2e/`): drive `Application` with scripted input + fake clock + the **converted real** fixtures (a setlist with real pedals). Assert the MIDI/tempo output sequence and display messages across: load setlist → next/prev part → next song → tap tempo → menu edit. This is the in-process equivalent of the old Flask `short`/`long`/`dpad` endpoints.
 
 ## Build (Makefile, run in WSL)
-- `make build` — compile core + sim into a `midicontroller` binary.
+- `make build-sim` — compile core + sim into a `midicontroller` binary. (`make build` now builds the Pico firmware `.uf2`; see `docs/mcu.md`.)
 - `make test` — build & run all GoogleTest suites (gtest/gmock compiled from vendored `third_party/googletest`).
 - `make run` — launch the sim.
 - `make clean` — remove build artifacts.
@@ -136,7 +136,7 @@ Toolchain: `g++` (C++17), no apt deps beyond a compiler — googletest and the J
 - **Tempo outputs** become a first-class port now, even though Phase-1 only logs them.
 
 ## Verification
-1. `make build` succeeds in WSL.
+1. `make build-sim` succeeds in WSL.
 2. `make test` — all unit/mock/e2e suites green; mock tests prove exact MIDI bytes match the Python behavior for real pedal configs.
 3. `make run` — sim boots from `data/`, scripted footswitch/encoder input changes parts/songs and logs the expected MIDI + display text.
 4. Spot-check: converted `data/*.json` round-trips the same pedal/preset/tempo state the Pi used (`midi_controller.yaml` → `midi_controller.json`).
