@@ -1,25 +1,40 @@
 # MidiController (C++)
 
+[![CI](https://github.com/jcksnvllxr80/MidiControllerCpp/actions/workflows/ci.yml/badge.svg)](https://github.com/jcksnvllxr80/MidiControllerCpp/actions/workflows/ci.yml)
+
 Portable C++17 rewrite of a guitar-pedal MIDI controller's brain, ported from the
 Raspberry Pi Python version. Hexagonal design: a hardware-free domain core with all
 I/O behind interfaces, so the same code runs on the desktop sim now and a
 microcontroller later.
 
-Status: domain core + config + simulator are done and tested. Microcontroller
-adapters are not started. (The editor app is a separate project.)
+Status: domain core + config + simulator are done and tested; the microcontroller
+firmware (Pico 2 W / RP2350) builds and is under hardware bring-up. (The editor app
+is a separate project.)
 Roadmap: [docs/plan.md](docs/plan.md).
 
 ## Build, test, run (WSL)
 
-Needs `g++` (C++17) and `make`. GoogleTest and nlohmann/json are vendored, so there
-are no other dependencies.
+The **firmware** builds with CMake + the Pico SDK; the **simulator** and the **tests**
+build with `g++` (C++17) — GoogleTest and nlohmann/json are vendored, so the host
+build has no other dependencies.
 
 ```sh
-make build   # -> build/midicontroller
-make test    # build & run all tests (unit + mock + e2e)
-make run     # run the simulator on data/ (scripted demo)
-make clean
+make build       # firmware  -> build-pico/midicontroller_pico.uf2  (Pico 2 W; needs PICO_SDK_PATH)
+make build-sim   # simulator  -> build/midicontroller
+make test        # build & run all tests (unit + mock + e2e)
+make run         # run the simulator on data/ (scripted demo)
+make clean       # remove desktop build/ ;  make pico-clean removes build-pico/
 ```
+
+Flashing and wiring: [docs/mcu.md](docs/mcu.md) and [docs/wiring.md](docs/wiring.md).
+
+## CI & releases
+
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the host test
+suite and builds the firmware `.uf2` on every push and PR. On a push to `master`, once both
+pass, it cuts a GitHub **Release** `v<VERSION>` (from the [`VERSION`](VERSION) file) with the
+versioned `.uf2` attached — **only when `VERSION` changed** (the tag is new). To ship: bump
+`VERSION` and merge to `master`.
 
 ## Layout
 
@@ -28,9 +43,9 @@ include/mc/   headers: domain/ ports/ config/ adapters/ app/
 src/          implementations + main.cpp
 data/         config as JSON: midi_controller.json, pedals/, songs/, sets/
 tests/        unit/ mock/ e2e/ support/
-tools/        yaml2json.py (one-shot YAML->JSON converter)
+tools/        yaml2json.py (YAML→JSON), embed_data.py (bake data into flash), gen_font.py, gen_wiring_excalidraw.py
 third_party/  vendored googletest + nlohmann/json
-docs/         plan, architecture, domain, midi-protocol, config-format
+docs/         plan, architecture, domain, midi-protocol, config-format, mcu, wiring, wifi-app-handoff
 ```
 
 ## Notes
@@ -45,3 +60,6 @@ docs/         plan, architecture, domain, midi-protocol, config-format
 - [docs/domain.md](docs/domain.md) — the core modules
 - [docs/midi-protocol.md](docs/midi-protocol.md) — byte construction & dispatch
 - [docs/config-format.md](docs/config-format.md) — JSON config reference
+- [docs/mcu.md](docs/mcu.md) — firmware build/flash, adapters, hardware status
+- [docs/wiring.md](docs/wiring.md) — Pico 2 W pin map, parts, power (+ `wiring.excalidraw` diagram)
+- [docs/wifi-app-handoff.md](docs/wifi-app-handoff.md) — editor-app protocol contract (WiFi, device discovery, firmware update)

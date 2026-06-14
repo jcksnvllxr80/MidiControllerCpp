@@ -252,4 +252,16 @@ ControllerState loadControllerStateFromFile(const std::string& path) {
     return loadControllerStateFromString(readFile(path));
 }
 
+std::string updateControllerDefaults(const std::string& jsonText, const std::string& currentSet,
+                                     const std::string& currentSong, const std::string& currentPart) {
+    json j = json::parse(jsonText);
+    // Mirror loadControllerStateFromString's layout (current_settings.preset.*);
+    // operator[] creates the objects if a minimal config omitted them.
+    json& preset = j["current_settings"]["preset"];
+    preset["setList"] = currentSet;
+    preset["song"] = currentSong;
+    preset["part"] = currentPart;
+    return j.dump(2);
+}
+
 }  // namespace mc::config

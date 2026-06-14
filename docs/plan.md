@@ -14,17 +14,17 @@ comes later. This plan covers the firmware only; the controller/editor app is a 
 ## Decisions (locked)
 - **Firmware lives in** `C:\Users\A-A-Ron\git\MidiControllerCpp\MidiControllerCpp`. The controller/editor app is a separate project, out of scope here.
 - **Config format: JSON.** One-time convert the existing YAML songs/sets/pedals to JSON.
-- **Build/run: WSL + GoogleTest, plain Makefile** (`make build`, `make test`, `make clean`). No real hardware in Phase 1 — desktop/sim adapters only.
+- **Build/run: WSL + GoogleTest, plain Makefile.** Host: `make build-sim` / `make test` / `make run` (only needs `g++`). Firmware: `make build` → the Pico `.uf2` (needs the Pico SDK). Phase 1 had no real hardware — desktop/sim adapters only.
 - **Architecture: ports & adapters (hexagonal).** Pure C++ domain core; all hardware behind interfaces. Same core runs on the sim now and the microcontroller later.
 - **This plan is maintained in-repo** at `MidiControllerCpp/docs/plan.md` as the canonical, living roadmap — updated as each phase lands. The `~/.claude/plans/` copy is throwaway.
 
-## Status (updated 2026-06-07)
+## Status (updated 2026-06-14)
 - **Phase 1 — DONE.** Domain core (`MidiMessage`, `Value`, `Transform`, `PedalConfig`,
   `MidiPedal`, `Setlist/Song/Part`, `ButtonSM`, `ControllerState`, `MenuTree`), all 8
   ports, JSON config loaders, and the one-shot `tools/yaml2json.py` → committed `data/*.json`.
 - **Phase 2 — DONE.** Sim adapters (`adapters/sim`), the `Application` event loop + `main.cpp`,
   and docs (`README.md` + `docs/{architecture,domain,midi-protocol,config-format}.md`).
-- **Tests — ~797 passing** (unit + mock + e2e) via vendored GoogleTest/GoogleMock; `make build/test/run`
+- **Tests — ~850 passing** (unit + mock + e2e) via vendored GoogleTest/GoogleMock; `make build-sim`/`test`/`run`
   all green in WSL, zero warnings. Verification criteria 1–4 below are met. Coverage: a data-driven
   suite checks every reachable pedal param (representative values) through the real dispatch, plus
   per-module suites for MidiMessage/Value/Transform/PedalConfig/MidiPedal/SongPartSet/ControllerState/
@@ -32,7 +32,14 @@ comes later. This plan covers the firmware only; the controller/editor app is a 
 - **Faithful-port decision:** observable MIDI is reproduced byte-for-byte, including the Python
   quirks (notably `Set Preset`'s `bank` uses `cc:0`, falsy in Python → bank select never sent;
   only the preset Program Change goes out). Documented in `docs/midi-protocol.md` and locked by tests.
-- **Phase 3 (mcu) — not started** (as planned).
+- **Phase 3 (mcu) — builds clean, under hardware bring-up.** Target board: **Pico 2 W (RP2350)**.
+  `adapters/mcu/` + the Pico `CMakeLists.txt` + `tools/embed_data.py` build a ~1.5 MB `.uf2` (`make build`);
+  the core is MCU-ready (`Transform`'s `std::regex` is a hand parser; nlohmann/json is kept — the RP2350's
+  520 KB RAM affords it). All adapters, WiFi (CYW43 + lwIP + mDNS) with non-blocking auto-reconnect,
+  `FlashKv` persistence via `flash_safe_execute`, an 8 s watchdog, a boot-config guard, debounced
+  "save defaults", the full OLED font, and the editor protocol (incl. `delete_*`/`write_part`,
+  `reboot`/`reboot_bootloader`, `device_id`) are **compile/link-verified**. The **USB serial editor
+  link is confirmed on hardware**; WiFi and the physical I/O are not yet bench-tested. See `docs/mcu.md`.
 
 ## What it does (so the model is clear)
 Data model: **Setlist → Songs → Parts**. A Part stores, per pedal, `(engaged, preset, params, settings)`. Loading a Part sends MIDI to set every pedal's on/off + preset (+ tempo). A **MidiPedal** has a name, a MIDI channel (1–16), and a per-pedal command map that turns high-level actions (Engage, Bypass, Set Preset, Set Tempo, knob/param tweaks) into MIDI CC/PC bytes. Footswitches step parts/songs; the rotary knob drives a menu for editing.
@@ -64,18 +71,19 @@ include/           public headers (mirror src)
 src/
   domain/          MidiMessage, MidiPedal, PedalConfig, Transform,
                    Setlist/Song/Part, ControllerState, ButtonSM, MenuTree
-  ports/           IMidiOut, ITempoOut, IDisplay, ILed, IInput,
-                   IClock, IConfigStore, IConfigTransport  (pure virtual)
+  ports/           IMidiOut, ITempoOut, IDisplay, ILed, IInput, IClock, IConfigStore,
+                   IConfigTransport, IWifi, ISystemControl  (pure virtual)
   config/          JSON loaders -> domain objects
   adapters/sim/    console display, scripted input, fs config store, chrono clock, logging midi
+  adapters/mcu/    Pico 2 W: GPIO/OLED/MIDI-DIN/tempo/LED, FlashKv, WiFi, USB editor link
   app/             Application (composition root + event loop)
   main.cpp
 data/              converted JSON: midi_controller.json, songs/, sets/, pedals/
 tests/             unit/, mock/, e2e/ + fixtures
-docs/              plan.md (this roadmap, kept current), architecture.excalidraw,
-                   README.md (mermaid), domain.md, midi-protocol.md, config-format.md
+docs/              plan.md (this roadmap), architecture.md (mermaid), domain.md, midi-protocol.md,
+                   config-format.md, mcu.md, wiring.md (+ wiring.excalidraw), wifi-app-handoff.md
 third_party/googletest   (vendored submodule, built by Makefile)
-tools/yaml2json.py        one-shot data converter
+tools/             yaml2json.py (YAML→JSON), embed_data.py (bake → flash), gen_font.py, gen_wiring_excalidraw.py
 Makefile
 ```
 
@@ -107,8 +115,12 @@ header (e.g. `nlohmann/json`) now; swap to a tiny MCU-friendly parser in Phase 3
 - **`ITempoOut` made explicit**: the 4 tempo outputs + tap tempo were Arduino-only before. Define the port now (set BPM / emit tap); sim adapter logs.
 - **Docs**: `architecture.excalidraw` (the diagram above), root `README.md` (build/test + layout, mermaid sequence of the event loop), short `domain.md`, `midi-protocol.md`, `config-format.md`. Concise — only what must be understood.
 
-## Phase 3 — Microcontroller (later, sketch only)
-Swap in `adapters/mcu/`: real GPIO for footswitches/encoder/LED, SSD1306 driver, **native** MIDI DIN (2×) and the 4 tempo 1/4" outputs (absorbing the Arduino's job), flash/SD `IConfigStore`, and **USB `IConfigTransport`** replacing WiFi/HTTP. Core and tests stay unchanged — that's the payoff of the HAL. Target board chosen here (user has ideas).
+## Phase 3 — Microcontroller (in progress — Pico 2 W / RP2350)
+Swap in `adapters/mcu/`: real GPIO for footswitches/encoder/LED, SSD1306 driver, **native** MIDI DIN (2×) and the 4 tempo 1/4" outputs (absorbing the Arduino's job), flash/SD `IConfigStore`, and **USB `IConfigTransport`**. Core and tests stay unchanged — that's the payoff of the HAL.
+
+Done (compile/link-verified, `make build` → `.uf2`): all adapters (`McuClock/McuMidiOut/TeeMidiOut/McuTempoOut/McuLed/McuInput/Ssd1306Display/McuConfigStore/FlashKv/StdioConfigTransport`), `Pins.h`, `main_mcu.cpp`, the Pico `CMakeLists.txt` (board `pico2_w`, exceptions on), and `tools/embed_data.py`. Added beyond the original scaffold: **WiFi** (`WifiManager` — CYW43 STA + lwIP TCP `:8080` + mDNS, the same `EditorProtocol`, non-blocking auto-reconnect), the full OLED font (`tools/gen_font.py`), `FlashKv` persistence via `flash_safe_execute` (WiFi creds + debounced "save defaults"), an 8 s **watchdog**, a boot-config guard, editor-protocol `delete_*`/`write_part` + `reboot`/`reboot_bootloader` + `device_id` (`ISystemControl`/`McuSystemControl`), and the raw-USB/WinUSB link (`-DMC_ENABLE_USB_EDITOR`). `std::regex` removed from `Transform`. The desktop Makefile excludes `src/adapters/mcu/`; SDK-free MCU logic (codec, config store) is host-tested.
+
+TODO before it ships: bench-test the physical I/O (footswitches, encoder, OLED, MIDI DIN, tempo, LED) and WiFi on a real board; an on-target RAM check parsing BigSky; the deferred on-device features (deep "Midi Pedals" editor menu, favourite mode, footswitch partner combos, About/IP screen, tap tempo); and a deliberate later pass on WiFi at-rest cred scrambling + wire auth/TLS. See `docs/mcu.md`.
 
 ## Tests (GoogleTest / GoogleMock)
 - **Unit** (`tests/unit/`): `Transform` parse+eval; `MidiMessage` byte exactness; `convert_to_int`/dict/min-max/on-off; Setlist/Song/Part JSON load; `ButtonSM` short/long/partner with a fake clock; `MenuTree` navigation; config loaders.
@@ -116,10 +128,11 @@ Swap in `adapters/mcu/`: real GPIO for footswitches/encoder/LED, SSD1306 driver,
 - **E2E** (`tests/e2e/`): drive `Application` with scripted input + fake clock + the **converted real** fixtures (a setlist with real pedals). Assert the MIDI/tempo output sequence and display messages across: load setlist → next/prev part → next song → tap tempo → menu edit. This is the in-process equivalent of the old Flask `short`/`long`/`dpad` endpoints.
 
 ## Build (Makefile, run in WSL)
-- `make build` — compile core + sim into a `midicontroller` binary.
+- `make build` — build the Pico firmware `.uf2` (CMake + Pico SDK; see `docs/mcu.md`).
+- `make build-sim` — compile core + sim into a `midicontroller` binary.
 - `make test` — build & run all GoogleTest suites (gtest/gmock compiled from vendored `third_party/googletest`).
 - `make run` — launch the sim.
-- `make clean` — remove build artifacts.
+- `make clean` / `make pico-clean` — remove the desktop `build/` / firmware `build-pico/` artifacts.
 Toolchain: `g++` (C++17), no apt deps beyond a compiler — googletest and the JSON header are vendored.
 
 ## Key risks / explicit decisions
@@ -129,7 +142,7 @@ Toolchain: `g++` (C++17), no apt deps beyond a compiler — googletest and the J
 - **Tempo outputs** become a first-class port now, even though Phase-1 only logs them.
 
 ## Verification
-1. `make build` succeeds in WSL.
+1. `make build-sim` succeeds in WSL.
 2. `make test` — all unit/mock/e2e suites green; mock tests prove exact MIDI bytes match the Python behavior for real pedal configs.
 3. `make run` — sim boots from `data/`, scripted footswitch/encoder input changes parts/songs and logs the expected MIDI + display text.
 4. Spot-check: converted `data/*.json` round-trips the same pedal/preset/tempo state the Pi used (`midi_controller.yaml` → `midi_controller.json`).

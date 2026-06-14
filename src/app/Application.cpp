@@ -1,6 +1,7 @@
 #include "mc/app/Application.h"
 
 #include <algorithm>
+#include <exception>
 
 #include "mc/config/ConfigLoader.h"
 
@@ -12,14 +13,27 @@ int indexOf(const std::vector<std::string>& v, const std::string& s, int dflt = 
         if (v[i] == s) return static_cast<int>(i);
     return dflt;
 }
+// Idle gap after the last set/song/part change before "save defaults" hits flash.
+// Debounced so rapid footswitch part changes during a song don't stall the rig on
+// an IRQ-masked flash write mid-performance.
+constexpr double kDefaultsPersistDelaySec = 1.5;
 }  // namespace
 
 Application::Application(Ports ports) : p_(ports) {}
 
 void Application::setup() {
-    state_ = config::loadControllerStateFromString(p_.store->read("midi_controller.json"));
+    // Boot must never crash-loop on bad data: if the controller config or setlist
+    // won't parse, fall back to an empty-but-runnable shell so the editor link can
+    // still connect and fix it. (The committed data is good; this guards a corrupt
+    // flash overlay or a half-finished write.)
+    try {
+        state_ = config::loadControllerStateFromString(p_.store->read("midi_controller.json"));
+        loadSetlist(state_.currentSet);
+    } catch (const std::exception&) {
+        setupFailed_ = true;
+        setlist_ = Setlist{};
+    }
 
-    loadSetlist(state_.currentSet);
     currentSongIdx_ = std::max(0, setlist_.indexOfSong(state_.currentSong));
     currentPartIdx_ = std::max(0, currentSong().indexOfPart(state_.currentPart));
     displayedSongIdx_ = currentSongIdx_;
@@ -27,11 +41,16 @@ void Application::setup() {
 
     // Build MidiPedals in channel order. The PedalConfig objects live in
     // pedalConfigs_ (std::map -> stable addresses), referenced by the pedals.
+    // A single malformed pedal file degrades to "that pedal missing", not a crash.
     for (const auto& ch : state_.channels) {
-        auto it = pedalConfigs_.emplace(ch.name, config::loadPedalConfigFromString(
-                                                     p_.store->read("pedals/" + ch.name + ".json")))
-                      .first;
-        pedals_.push_back(std::make_unique<MidiPedal>(ch.name, ch.channel, &it->second, p_.midi));
+        try {
+            auto it = pedalConfigs_.emplace(ch.name, config::loadPedalConfigFromString(
+                                                         p_.store->read("pedals/" + ch.name + ".json")))
+                          .first;
+            pedals_.push_back(std::make_unique<MidiPedal>(ch.name, ch.channel, &it->second, p_.midi));
+        } catch (const std::exception&) {
+            setupFailed_ = true;  // skip this pedal, keep building the rest
+        }
     }
 
     if (p_.led) {
@@ -39,7 +58,10 @@ void Application::setup() {
         p_.led->setBrightness(state_.knobBrightness);
     }
     buildMenu();
-    setSongInfoMessage();  // standard mode: show current song info, no MIDI at boot
+    if (setupFailed_ && setlist_.songs.empty())
+        show("Config error - use editor to fix");
+    else
+        setSongInfoMessage();  // standard mode: show current song info, no MIDI at boot
 }
 
 void Application::loadSetlist(const std::string& setName) {
@@ -164,6 +186,41 @@ void Application::loadPart() {
     }
     setSongInfoMessage();
     if (p_.tempo) p_.tempo->setBpm(currentSong().bpmValue());
+
+    // Remember this committed selection as the boot default. (currentSet is set by
+    // the Sets menu; song/part funnel through here from every commit path.)
+    state_.currentSong = currentSong().name;
+    state_.currentPart = currentPart().name;
+    markDefaultsDirty();
+}
+
+// --- "save defaults" persistence (ports midi_controller.yaml rewrite) ---------
+
+void Application::tick() {
+    if (defaultsDirty_ && p_.clock && (p_.clock->now() - defaultsDirtyAt_) >= kDefaultsPersistDelaySec)
+        persistDefaults();
+}
+
+void Application::markDefaultsDirty() {
+    if (p_.clock) {
+        defaultsDirty_ = true;
+        defaultsDirtyAt_ = p_.clock->now();  // flushed by tick() after an idle gap
+    } else {
+        persistDefaults();  // no clock to debounce against -> write through now
+    }
+}
+
+void Application::persistDefaults() {
+    defaultsDirty_ = false;
+    if (!p_.store) return;
+    try {
+        std::string updated = config::updateControllerDefaults(p_.store->read("midi_controller.json"),
+                                                               state_.currentSet, state_.currentSong,
+                                                               state_.currentPart);
+        p_.store->write("midi_controller.json", updated);
+    } catch (const std::exception&) {
+        // Best-effort: a failed defaults save must never take down the rig.
+    }
 }
 
 // --- display messages --------------------------------------------------------
@@ -171,19 +228,17 @@ void Application::loadPart() {
 std::string Application::songInfoString(const Song& s, const Part& p) const {
     return s.name + " - " + s.bpm + "BPM - " + p.name;
 }
-void Application::setSongInfoMessage() {
-    if (p_.display) p_.display->setMessage(songInfoString(currentSong(), currentPart()));
+void Application::show(const std::string& msg) {
+    lastMessage_ = msg;  // so displayedMessage() (and the editor link) can read it back
+    if (p_.display) p_.display->setMessage(msg);
 }
-void Application::previewMessage() {
-    if (p_.display) p_.display->setMessage(songInfoString(displayedSong(), displayedPart()));
-}
+void Application::setSongInfoMessage() { show(songInfoString(currentSong(), currentPart())); }
+void Application::previewMessage() { show(songInfoString(displayedSong(), displayedPart())); }
 
 // --- menu wiring -------------------------------------------------------------
 
 void Application::buildMenu() {
-    menu_.setSink([this](const std::string& m) {
-        if (p_.display) p_.display->setMessage(m);
-    });
+    menu_.setSink([this](const std::string& m) { show(m); });
     menu_.setRootMessage([this] { return songInfoString(currentSong(), currentPart()); });
 
     setupMenu_ = menu_.root()->addChild("Setup");

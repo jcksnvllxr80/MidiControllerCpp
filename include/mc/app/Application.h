@@ -11,6 +11,7 @@
 // All hardware is behind ports, so the same Application runs on the sim now and
 // the microcontroller later.
 //
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <string>
@@ -50,6 +51,9 @@ public:
     void setup();        // load config, build pedals/menu, set initial display
     void run();          // poll input -> dispatch until Quit / source exhausted
     bool handleEvent(const InputEvent& ev);  // false => stop loop
+    void tick();         // periodic housekeeping (debounced "save defaults"); call each loop iter
+
+    bool setupFailed() const { return setupFailed_; }  // config parse fell back to a safe shell
 
     // --- inspectors (for tests) ---
     ControllerState& state() { return state_; }
@@ -59,6 +63,7 @@ public:
     const std::string& currentPartName() const { return currentPart().name; }
     const std::string& displayedSongName() const { return displayedSong().name; }
     const std::string& displayedPartName() const { return displayedPart().name; }
+    const std::string& displayedMessage() const { return lastMessage_; }  // last text shown
     bool quitRequested() const { return quitRequested_; }
 
     // Navigation, exposed so tests/menus can drive them directly.
@@ -71,18 +76,33 @@ public:
     void prevPart();
 
 private:
-    const Song& currentSong() const { return setlist_.songs.at(currentSongIdx_); }
-    const Part& currentPart() const { return currentSong().parts.at(currentPartIdx_); }
-    const Song& displayedSong() const { return setlist_.songs.at(displayedSongIdx_); }
-    const Part& displayedPart() const { return displayedSong().parts.at(displayedPartIdx_); }
+    // Bounds-safe so a corrupt/empty config (see setup()'s fallback) degrades to a
+    // blank song/part instead of throwing out_of_range and taking the device down.
+    const Song& songAt(int i) const {
+        static const Song kEmpty;
+        if (setlist_.songs.empty()) return kEmpty;
+        return setlist_.songs[std::min(std::max(i, 0), static_cast<int>(setlist_.songs.size()) - 1)];
+    }
+    static const Part& partAt(const Song& s, int i) {
+        static const Part kEmpty;
+        if (s.parts.empty()) return kEmpty;
+        return s.parts[std::min(std::max(i, 0), static_cast<int>(s.parts.size()) - 1)];
+    }
+    const Song& currentSong() const { return songAt(currentSongIdx_); }
+    const Part& currentPart() const { return partAt(currentSong(), currentPartIdx_); }
+    const Song& displayedSong() const { return songAt(displayedSongIdx_); }
+    const Part& displayedPart() const { return partAt(displayedSong(), displayedPartIdx_); }
 
     void loadSetlist(const std::string& setName);
     void buttonExecutor(const std::string& fn);
     void changeAndSelect(const std::string& fn);
     void setSongInfoMessage();
     void previewMessage();
+    void show(const std::string& msg);  // route all display text through here
     std::string songInfoString(const Song& s, const Part& p) const;
     void buildMenu();
+    void markDefaultsDirty();  // a commit changed current set/song/part
+    void persistDefaults();    // write current set/song/part back to midi_controller.json
 
     Ports p_;
     ControllerState state_;
@@ -95,6 +115,10 @@ private:
     int displayedSongIdx_ = 0;
     int displayedPartIdx_ = 0;
     bool quitRequested_ = false;
+    std::string lastMessage_;
+    bool setupFailed_ = false;       // config parse threw -> running in a safe shell
+    bool defaultsDirty_ = false;     // current set/song/part changed, not yet persisted
+    double defaultsDirtyAt_ = 0.0;   // clock time of the change (for debounced flush)
 
     MenuTree menu_{"MidiController"};
     MenuNode* setupMenu_ = nullptr;
