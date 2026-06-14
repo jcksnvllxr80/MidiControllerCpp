@@ -36,10 +36,16 @@ exceptions are enabled (`PICO_CXX_ENABLE_EXCEPTIONS`) because the loader throws 
 config — and `Application::setup()` catches that and falls back to a safe, still-reachable
 shell so a corrupt config can't brick boot.
 
-### 3. Flash (BOOTSEL drag-and-drop — easiest on Windows)
+### 3. Flash
 
-1. Hold the **BOOTSEL** button while plugging the Pico into USB. It mounts as a
-   drive named **RP2350**.
+> **First flash on a fresh Pico 2 W: you must use the BOOTSEL button.** A blank board has
+> no firmware yet to accept a software "reboot to bootloader", so the hardware bootloader
+> (hold **BOOTSEL** while power-cycling) is the only way in the first time.
+
+**BOOTSEL drag-and-drop (easiest on Windows):**
+
+1. Hold the **BOOTSEL** button while plugging the Pico into USB (i.e. power-cycle it with
+   the button held). It mounts as a drive named **RP2350**.
 2. Drag `...\MidiControllerCpp\build-pico\midicontroller_pico.uf2` onto that drive
    in Explorer (or `cp build-pico/midicontroller_pico.uf2 /mnt/e/` to the drive
    letter it mounted as). It reboots and runs immediately.
@@ -48,6 +54,12 @@ shell so a corrupt config can't brick boot.
 ```sh
 picotool load -x build-pico/midicontroller_pico.uf2   # -x = run after loading
 ```
+
+**After the first flash — no button needed.** Once this firmware is on the board it can
+drop itself into BOOTSEL on command: send `{"op":"reboot_bootloader"}` over USB or WiFi and
+it re-enumerates as the `RP2350` drive, then copy the `.uf2` as above. The editor app
+(**MidiControllerControllerApp**, the separate UI repo) drives this from a button — see
+[`wifi-app-handoff.md`](wifi-app-handoff.md) (Task 4) for the end-to-end update flow.
 
 ### 4. Connect / debug
 
