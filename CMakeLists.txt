@@ -62,7 +62,11 @@ target_link_libraries(midicontroller_pico
 # (overrides the SDK's "Pico" default; both are #ifndef-guarded).
 target_compile_definitions(midicontroller_pico PRIVATE
     USBD_PRODUCT="MidiController"
-    USBD_MANUFACTURER="MidiController")
+    USBD_MANUFACTURER="MidiController"
+    # Transmit without requiring the host to assert DTR. serialport-rs (the editor
+    # app) doesn't raise DTR on open the way pyserial does; without this the Pico
+    # receives requests but suppresses its replies. See docs/mcu.md.
+    PICO_STDIO_USB_CONNECTION_WITHOUT_DTR=1)
 
 # The editor link + debug both ride the USB CDC; the app's codec skips noise.
 pico_enable_stdio_usb(midicontroller_pico 1)
