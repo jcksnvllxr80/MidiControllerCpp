@@ -56,6 +56,11 @@ column is what the adapter board maps each ribbon net **from**.
   footswitches, and all six MIDI jacks are untouched.
 - The Pico has native USB for the editor link and on-board WiFi (CYW43); the Pi's
   network role is replaced by that.
+- **The cooling fan is dropped.** It was driven by the Pi OS's temperature-based
+  `gpio-fan` (set up in `raspi-config`), purely to cool the hot Pi 4 — not by the
+  app, and not via any switching circuit on this PCB. The RP2350 runs cold and needs
+  no active cooling, so there is no fan and no firmware fan control. Leave the `J2`
+  fan header unpopulated.
 
 ## Corrections vs. the old "redesign" draft
 
