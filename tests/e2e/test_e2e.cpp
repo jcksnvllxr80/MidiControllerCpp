@@ -47,7 +47,6 @@ const Seq kVictoryChorus = {
 struct Rig {
     sim::FsConfigStore store{"data"};
     RecordingMidiOut midi;
-    RecordingTempoOut tempo;
     RecordingDisplay display;
     NullLed led;
     FakeClock clock;
@@ -56,7 +55,7 @@ struct Rig {
     Application app;
 
     Rig()
-        : app({&store, &midi, &tempo, &display, &led, &clock, &input, &transport}) {}
+        : app({&store, &midi, &display, &led, &clock, &input, &transport}) {}
 
     void fsShort(int b) { app.handleEvent({InputEvent::Type::FootswitchShort, b, 0}); }
     void fsLong(int b) { app.handleEvent({InputEvent::Type::FootswitchLong, b, 0}); }
@@ -79,8 +78,6 @@ TEST(E2E, LoadPartEmitsExactGoldenSequence) {
     r.app.setup();
     r.app.loadPart();  // load current part (Chorus)
     EXPECT_EQ(r.midi.byteSeq(), kVictoryChorus);
-    ASSERT_EQ(r.tempo.bpms.size(), 1u);
-    EXPECT_DOUBLE_EQ(r.tempo.bpms.back(), 110.0);
 }
 
 TEST(E2E, FootswitchPreviewThenSelectCommits) {
@@ -105,7 +102,7 @@ TEST(E2E, LongPressCommitsImmediately) {
     EXPECT_EQ(r.midi.byteSeq(), kVictoryChorus);
 }
 
-TEST(E2E, NextSongSelectLoadsNewSongFirstPartAndTempo) {
+TEST(E2E, NextSongSelectLoadsNewSongFirstPart) {
     Rig r;
     r.app.setup();
     r.fsShort(5);  // "Song Up" -> preview Here As In Heaven - Lead / Intro
@@ -115,7 +112,6 @@ TEST(E2E, NextSongSelectLoadsNewSongFirstPartAndTempo) {
     r.fsShort(2);  // "Select" -> load it
     EXPECT_EQ(r.app.currentSongName(), "Here As In Heaven - Lead");
     EXPECT_EQ(r.app.currentPartName(), "Intro");
-    EXPECT_DOUBLE_EQ(r.tempo.bpms.back(), 74.0);
     ASSERT_FALSE(r.midi.messages.empty());
     // QuartzV2 preset 1 first (channel order), ScarlettLove preset TS808 -> cc20=127.
     EXPECT_EQ(r.midi.messages.front().bytes(), (Bytes{0xB0, 0x61, 0x01}));

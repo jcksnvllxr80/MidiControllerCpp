@@ -1,7 +1,7 @@
 // Drive the Application to every (song, part) in the real setlist and assert
 // integration invariants: a load emits MIDI, is idempotent on reload, processes
-// pedals in channel order (QuartzV2 first, ScarlettLove last), and pushes the
-// song's tempo. Plus a second hand-verified golden (Here As In Heaven / Intro).
+// pedals in channel order (QuartzV2 first, ScarlettLove last). Plus a second
+// hand-verified golden (Here As In Heaven / Intro).
 #include <map>
 #include <string>
 #include <vector>
@@ -26,14 +26,13 @@ namespace {
 struct Rig {
     sim::FsConfigStore store{"data"};
     RecordingMidiOut midi;
-    RecordingTempoOut tempo;
     RecordingDisplay display;
     NullLed led;
     FakeClock clock;
     sim::ScriptedInput input;
     sim::NullConfigTransport transport;
     Application app;
-    Rig() : app({&store, &midi, &tempo, &display, &led, &clock, &input, &transport}) { app.setup(); }
+    Rig() : app({&store, &midi, &display, &led, &clock, &input, &transport}) { app.setup(); }
     void fsShort(int b) { app.handleEvent({InputEvent::Type::FootswitchShort, b, 0}); }
 };
 
@@ -62,8 +61,6 @@ std::vector<PartRef> genParts() {
     return out;
 }
 
-double expectedBpm(const std::string& song) { return song.rfind("Victory", 0) == 0 ? 110.0 : 74.0; }
-
 }  // namespace
 
 class PartLoad : public ::testing::TestWithParam<PartRef> {};
@@ -76,16 +73,12 @@ TEST_P(PartLoad, IntegrationInvariants) {
     ASSERT_EQ(r.app.currentPartName(), c.part);
 
     r.midi.clear();
-    r.tempo.bpms.clear();
     r.app.loadPart();
     const Seq first = r.midi.byteSeq();
 
     // 1) a load emits MIDI
     ASSERT_FALSE(first.empty());
-    // 2) tempo pushed
-    ASSERT_FALSE(r.tempo.bpms.empty());
-    EXPECT_DOUBLE_EQ(r.tempo.bpms.back(), expectedBpm(c.song));
-    // 3) channel order: first message is QuartzV2 (ch1); ScarlettLove (ch16) is last group
+    // 2) channel order: first message is QuartzV2 (ch1); ScarlettLove (ch16) is last group
     EXPECT_EQ(r.midi.messages.front().channel(), 1);
     int lastNon16 = -1, firstCh16 = static_cast<int>(r.midi.messages.size());
     for (int i = 0; i < static_cast<int>(r.midi.messages.size()); ++i) {
@@ -95,7 +88,7 @@ TEST_P(PartLoad, IntegrationInvariants) {
     }
     EXPECT_LT(lastNon16, firstCh16) << "ScarlettLove (ch16) messages must come last";
 
-    // 4) idempotent: reloading the same part yields identical bytes
+    // 3) idempotent: reloading the same part yields identical bytes
     r.midi.clear();
     r.app.loadPart();
     EXPECT_EQ(r.midi.byteSeq(), first);

@@ -15,14 +15,13 @@ namespace {
 struct Rig {
     sim::FsConfigStore store{"data"};
     RecordingMidiOut midi;
-    RecordingTempoOut tempo;
     RecordingDisplay display;
     NullLed led;
     FakeClock clock;
     sim::ScriptedInput input;
     sim::NullConfigTransport transport;
     Application app;
-    Rig() : app({&store, &midi, &tempo, &display, &led, &clock, &input, &transport}) { app.setup(); }
+    Rig() : app({&store, &midi, &display, &led, &clock, &input, &transport}) { app.setup(); }
 
     void fsShort(int b) { app.handleEvent({InputEvent::Type::FootswitchShort, b, 0}); }
     void fsLong(int b) { app.handleEvent({InputEvent::Type::FootswitchLong, b, 0}); }
@@ -83,7 +82,6 @@ TEST(AppNav, SelectAfterPreviewCommitsAndEmits) {
     r.app.selectChoice();  // commit
     EXPECT_EQ(r.app.currentPartName(), "Bridge");
     EXPECT_FALSE(r.midi.messages.empty());
-    EXPECT_DOUBLE_EQ(r.tempo.bpms.back(), 110.0);
 }
 
 // ---- footswitch action mapping ---------------------------------------------

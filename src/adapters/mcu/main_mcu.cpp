@@ -11,15 +11,18 @@
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"  // pico_get_unique_board_id_string
 
+#include "hardware/i2c.h"
+#include "hardware/spi.h"
+
 #include "mc/adapters/mcu/EmbeddedData.h"
 #include "mc/adapters/mcu/FlashKv.h"
+#include "mc/adapters/mcu/McpExpander.h"
 #include "mc/adapters/mcu/McuClock.h"
 #include "mc/adapters/mcu/McuConfigStore.h"
 #include "mc/adapters/mcu/McuInput.h"
 #include "mc/adapters/mcu/McuLed.h"
 #include "mc/adapters/mcu/McuMidiOut.h"
 #include "mc/adapters/mcu/McuSystemControl.h"
-#include "mc/adapters/mcu/McuTempoOut.h"
 #include "mc/adapters/mcu/Pins.h"
 #include "mc/adapters/mcu/Ssd1306Display.h"
 #include "mc/adapters/mcu/WifiManager.h"
@@ -44,27 +47,34 @@ int main() {
     }
 
     McuClock clock;
-    McuMidiOut midiA(uart0, pins::MIDI_A_TX);
-    McuMidiOut midiB(uart1, pins::MIDI_B_TX);
-    TeeMidiOut midi(&midiA, &midiB);  // mirror to both DIN jacks
-    McuTempoOut tempo(pins::TEMPO, 4);
-    Ssd1306Display display(i2c1, pins::OLED_I2C_ADDR, pins::OLED_SDA, pins::OLED_SCL);
+
+    // Shared I2C bus (i2c0): the MCP23017 expander (0x22) and the PIC MIDI bridge
+    // (0x04) both live here, exactly as on the Pi's single I2C bus. Bring it up once.
+    i2c_init(i2c0, 400'000);
+    gpio_set_function(pins::I2C_SDA, GPIO_FUNC_I2C);
+    gpio_set_function(pins::I2C_SCL, GPIO_FUNC_I2C);
+    gpio_pull_up(pins::I2C_SDA);
+    gpio_pull_up(pins::I2C_SCL);
+
+    McuMidiOut midi(i2c0, pins::MIDI_PIC_ADDR);  // raw MIDI -> PIC -> 6 jacks
+    McpExpander expander(i2c0, pins::MCP23017_ADDR);
+    Ssd1306Display display(spi0, pins::OLED_SCLK, pins::OLED_MOSI, pins::OLED_CS, pins::OLED_DC,
+                           pins::OLED_RST);
     McuLed led(pins::LED_R, pins::LED_G, pins::LED_B);
-    McuInput input(clock, pins::FOOTSWITCH, 6, pins::ENCODER_A, pins::ENCODER_B, pins::ROTARY_PB);
+    McuInput input(clock, expander, pins::FOOTSWITCH_BITS, 5, pins::SELECTOR_BIT, pins::MCP_INT_A,
+                   pins::MCP_INT_B, pins::ENCODER_A, pins::ENCODER_B);
     // Persist "save defaults" in the last flash sector (survives reboot).
     FlashKv persist(PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE);
     McuConfigStore store(kEmbeddedData, kEmbeddedDataCount, &persist);
 
-    midiA.begin();
-    midiB.begin();
-    tempo.begin();
+    expander.begin();
     display.begin();
     led.begin();
     input.begin();
 
     // The Application drives the rig; the loop also services the editor link over
     // the USB CDC. (Transport isn't passed to the Application — we run the loop.)
-    Application app({&store, &midi, &tempo, &display, &led, &clock, &input, nullptr});
+    Application app({&store, &midi, &display, &led, &clock, &input, nullptr});
     app.setup();
 
     // WiFi: connects to a saved network on boot; the editor link also runs over

@@ -1,7 +1,7 @@
 #pragma once
 //
 // Sim/desktop adapters — concrete ports for running the core without hardware.
-// MIDI/tempo/LED/display just log; the clock is std::chrono; input is scripted;
+// MIDI/LED/display just log; the clock is std::chrono; input is scripted;
 // config is the filesystem. Swap these for adapters/mcu in Phase 3 and the core
 // is unchanged.
 //
@@ -17,7 +17,6 @@
 #include "mc/ports/IInput.h"
 #include "mc/ports/ILed.h"
 #include "mc/ports/IMidiOut.h"
-#include "mc/ports/ITempoOut.h"
 
 namespace mc::sim {
 
@@ -25,20 +24,6 @@ class LoggingMidiOut : public IMidiOut {
 public:
     explicit LoggingMidiOut(std::ostream& os = std::cout) : os_(os) {}
     void send(const MidiMessage& m) override { os_ << "  [midi]  " << m.toString() << "\n"; }
-
-private:
-    std::ostream& os_;
-};
-
-class LoggingTempoOut : public ITempoOut {
-public:
-    explicit LoggingTempoOut(std::ostream& os = std::cout) : os_(os) {}
-    void setBpm(double bpm) override {
-        char buf[32];
-        std::snprintf(buf, sizeof buf, "%.1f", bpm);
-        os_ << "  [tempo] set " << buf << " BPM\n";
-    }
-    void tap() override { os_ << "  [tempo] tap\n"; }
 
 private:
     std::ostream& os_;

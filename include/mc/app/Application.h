@@ -29,7 +29,6 @@
 #include "mc/ports/IInput.h"
 #include "mc/ports/ILed.h"
 #include "mc/ports/IMidiOut.h"
-#include "mc/ports/ITempoOut.h"
 
 namespace mc {
 
@@ -38,7 +37,6 @@ public:
     struct Ports {
         IConfigStore* store = nullptr;
         IMidiOut* midi = nullptr;
-        ITempoOut* tempo = nullptr;
         IDisplay* display = nullptr;
         ILed* led = nullptr;
         IClock* clock = nullptr;

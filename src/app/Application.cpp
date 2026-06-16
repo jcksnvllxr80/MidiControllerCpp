@@ -185,7 +185,6 @@ void Application::loadPart() {
         if (auto s = asString(st->settings); s && !s->empty()) pedal->setSetting(*s);
     }
     setSongInfoMessage();
-    if (p_.tempo) p_.tempo->setBpm(currentSong().bpmValue());
 
     // Remember this committed selection as the boot default. (currentSet is set by
     // the Sets menu; song/part funnel through here from every commit path.)

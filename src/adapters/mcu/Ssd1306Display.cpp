@@ -1,32 +1,52 @@
 #include "mc/adapters/mcu/Ssd1306Display.h"
 
-#include <vector>
-
 #include "hardware/gpio.h"
+#include "pico/stdlib.h"  // sleep_ms
 
 #include "mc/adapters/mcu/Ssd1306Font.h"
 
 namespace mc::mcu {
 
 namespace {
-constexpr int kCharW = 6;       // 5px glyph + 1px gap
-constexpr int kXStart = 2;      // DISPLAY_X_START in OledDisplay
+constexpr int kCharW = 6;   // 5px glyph + 1px gap
+constexpr int kXStart = 2;  // DISPLAY_X_START in OledDisplay
 }  // namespace
 
-Ssd1306Display::Ssd1306Display(i2c_inst_t* i2c, uint8_t addr, unsigned sda, unsigned scl)
-    : i2c_(i2c), addr_(addr), sda_(sda), scl_(scl) {}
+Ssd1306Display::Ssd1306Display(spi_inst_t* spi, unsigned sclk, unsigned mosi, unsigned cs, unsigned dc,
+                               unsigned rst)
+    : spi_(spi), sclk_(sclk), mosi_(mosi), cs_(cs), dc_(dc), rst_(rst) {}
 
 void Ssd1306Display::command(uint8_t c) {
-    uint8_t buf[2] = {0x00, c};  // 0x00 = command stream
-    i2c_write_blocking(i2c_, addr_, buf, 2, false);
+    gpio_put(dc_, 0);  // DC low = command
+    gpio_put(cs_, 0);
+    spi_write_blocking(spi_, &c, 1);
+    gpio_put(cs_, 1);
+}
+
+void Ssd1306Display::writeData(const uint8_t* data, size_t len) {
+    gpio_put(dc_, 1);  // DC high = display data
+    gpio_put(cs_, 0);
+    spi_write_blocking(spi_, data, len);
+    gpio_put(cs_, 1);
 }
 
 void Ssd1306Display::begin() {
-    i2c_init(i2c_, 400'000);
-    gpio_set_function(sda_, GPIO_FUNC_I2C);
-    gpio_set_function(scl_, GPIO_FUNC_I2C);
-    gpio_pull_up(sda_);
-    gpio_pull_up(scl_);
+    spi_init(spi_, 10'000'000);  // 10 MHz
+    gpio_set_function(sclk_, GPIO_FUNC_SPI);
+    gpio_set_function(mosi_, GPIO_FUNC_SPI);
+    for (unsigned pin : {cs_, dc_, rst_}) {
+        gpio_init(pin);
+        gpio_set_dir(pin, GPIO_OUT);
+    }
+    gpio_put(cs_, 1);
+
+    // Reset pulse.
+    gpio_put(rst_, 1);
+    sleep_ms(1);
+    gpio_put(rst_, 0);
+    sleep_ms(10);
+    gpio_put(rst_, 1);
+    sleep_ms(10);
 
     static const uint8_t kInit[] = {
         0xAE,                    // display off
@@ -57,12 +77,7 @@ void Ssd1306Display::flush() {
     command(0x22);  // page address
     command(0x00);
     command(kPages - 1);
-
-    std::vector<uint8_t> buf;
-    buf.reserve(1 + sizeof fb_);
-    buf.push_back(0x40);  // data stream
-    for (uint8_t b : fb_) buf.push_back(b);
-    i2c_write_blocking(i2c_, addr_, buf.data(), buf.size(), false);
+    writeData(fb_, sizeof fb_);
 }
 
 void Ssd1306Display::drawChar(int page, int x, char c) {

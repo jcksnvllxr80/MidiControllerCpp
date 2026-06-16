@@ -1,10 +1,16 @@
 #pragma once
 //
-// McuMidiOut — IMidiOut over a hardware UART at the MIDI rate (31250 baud, 8N1).
-// One instance per DIN jack. TeeMidiOut mirrors to both jacks; for per-channel
-// routing wrap your own IMidiOut that dispatches on msg.channel().
+// McuMidiOut — IMidiOut over I2C to the PIC18F26K80 MIDI bridge at address 0x04,
+// exactly as the Raspberry Pi firmware did (MIDI.py: writeRaw8 each byte to 0x04).
+// The PIC fans every byte out to all 6 physical jacks (2x DIN-5 + 4x TRS-MIDI), so
+// the Pico does NOT generate MIDI on a UART — it just feeds the bridge.
 //
-#include "hardware/uart.h"
+// The I2C bus is shared with the MCP23017 expander and is brought up once in main;
+// this class only does the per-message writes.
+//
+#include <cstdint>
+
+#include "hardware/i2c.h"
 
 #include "mc/ports/IMidiOut.h"
 
@@ -12,27 +18,12 @@ namespace mc::mcu {
 
 class McuMidiOut : public IMidiOut {
 public:
-    McuMidiOut(uart_inst_t* uart, unsigned txPin);
-    void begin();  // call once before use
+    McuMidiOut(i2c_inst_t* i2c, uint8_t addr) : i2c_(i2c), addr_(addr) {}
     void send(const MidiMessage& msg) override;
 
 private:
-    uart_inst_t* uart_;
-    unsigned txPin_;
-};
-
-// Mirror every message to two outputs (the two DIN jacks).
-class TeeMidiOut : public IMidiOut {
-public:
-    TeeMidiOut(IMidiOut* a, IMidiOut* b) : a_(a), b_(b) {}
-    void send(const MidiMessage& msg) override {
-        if (a_) a_->send(msg);
-        if (b_) b_->send(msg);
-    }
-
-private:
-    IMidiOut* a_;
-    IMidiOut* b_;
+    i2c_inst_t* i2c_;
+    uint8_t addr_;
 };
 
 }  // namespace mc::mcu

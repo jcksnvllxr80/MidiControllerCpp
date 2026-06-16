@@ -23,13 +23,12 @@ TEST(BootGuard, MalformedConfigFallsBackInsteadOfThrowing) {
     store.write("midi_controller.json", "{ not valid json at all ");
 
     RecordingMidiOut midi;
-    RecordingTempoOut tempo;
     RecordingDisplay display;
     NullLed led;
     FakeClock clock;
     sim::ScriptedInput input;
     sim::NullConfigTransport tr;
-    Application app({&store, &midi, &tempo, &display, &led, &clock, &input, &tr});
+    Application app({&store, &midi, &display, &led, &clock, &input, &tr});
 
     EXPECT_NO_THROW(app.setup());            // the whole point: no crash on bad config
     EXPECT_TRUE(app.setupFailed());
