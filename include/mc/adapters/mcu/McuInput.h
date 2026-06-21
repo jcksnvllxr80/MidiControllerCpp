@@ -86,6 +86,13 @@ private:
     static constexpr uint32_t kEncBounceUs = 2000;
     static constexpr uint32_t kEncCooldownUs = 250'000;  // 250 ms minimum between counted steps
     static constexpr double kSelBounceS = 0.030;    // 30 ms selector debounce (no HW caps)
+    // Backstop: re-read the expander GPIO at least this often even when no MCP INT
+    // line is asserted. The selector pin has no pull-up (active-high, IPOL-inverted),
+    // so its idle level is undefined at boot; if the MCP latches "pressed" as its
+    // interrupt-on-change baseline, the first real press produces NO edge and INT
+    // never fires. Polling on this interval samples the level directly so that first
+    // press is never lost, and each read re-establishes the MCP's compare baseline.
+    static constexpr double kSelPollS = 0.008;      // 8 ms expander backstop poll
     int encAStable_ = 1, encBStable_ = 1;           // debounced A/B levels
     uint32_t encALastUs_ = 0, encBLastUs_ = 0;      // last accepted edge time per line
     uint32_t encLastStepUs_ = 0;                    // time of last counted step (IRQ only)
@@ -114,6 +121,7 @@ private:
     bool rotaryDown_ = false;
     double rotaryStart_ = 0.0;
     double selRecheckAt_ = 0.0;  // scheduled re-read time when selector change was debounced
+    double nextPollS_ = 0.0;     // next backstop expander read (see kSelPollS)
 
     std::array<InputEvent, kRing> ring_{};
     size_t head_ = 0, tail_ = 0;

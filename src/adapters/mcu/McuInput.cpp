@@ -134,14 +134,16 @@ void McuInput::begin() {
     for (auto& t : changedAt_) t = now;
 
     // Sync level_[] to the real hardware state. For footswitches (active-low, pull-up
-    // on) bit=1 reliably means released. For the selector, IPOL=1 inverts so bit=1
-    // also reliably means released (pin floats LOW without a pull-up → IPOL → 1).
-    // This keeps level_ consistent with serviceExpander's selReleased convention and
-    // ensures the MCP's "previous state" matches level_ so the first press fires INT.
+    // on) bit=1 reliably means released, so latching the boot read is correct.
     const uint16_t initWord = exp_.readGpio();
     for (int i = 0; i < fswCount_; ++i)
         level_[i] = (initWord >> fswBits_[i]) & 1u;
-    level_[fswCount_] = (initWord >> selectorBit_) & 1u;  // IPOL: 1=released, 0=pressed
+    // The selector has NO pull-up (active-high, IPOL-inverted); its idle level is not
+    // defined at boot, so do NOT latch the possibly-floating read — assume released
+    // (the button is effectively never held at power-on). The kSelPollS backstop in
+    // serviceExpander() resyncs within a few ms if this assumption is ever wrong,
+    // and avoids a stuck "already pressed" state that silently eats the first press.
+    level_[fswCount_] = true;  // released
 }
 
 void McuInput::push(const InputEvent& e) {
@@ -162,9 +164,17 @@ void McuInput::serviceExpander(double nowS) {
     // MCP INT lines are active-high and held asserted until we read the GPIO
     // register. Poll them directly — no interrupt needed since the line stays
     // high until serviceExpander() clears it via exp_.readGpio().
+    //
+    // We ALSO force a read on a fixed interval (kSelPollS) regardless of INT. The
+    // selector has no pull-up, so its boot level is undefined: if the MCP latched
+    // "pressed" as its compare baseline, the first press makes no edge and INT never
+    // asserts. The periodic read samples the level directly (catching that first
+    // press) and re-establishes the MCP baseline so later edges fire normally.
     bool intFired = gpio_get(intA_) || gpio_get(intB_);
     bool selRecheck = selRecheckAt_ > 0.0 && nowS >= selRecheckAt_;
-    if (!intFired && !selRecheck) return;
+    bool periodic = nowS >= nextPollS_;
+    if (!intFired && !selRecheck && !periodic) return;
+    if (periodic) nextPollS_ = nowS + kSelPollS;
     if (selRecheck) selRecheckAt_ = 0.0;
 
     const uint16_t word = exp_.readGpio();

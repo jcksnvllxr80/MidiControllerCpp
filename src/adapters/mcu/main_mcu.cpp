@@ -75,8 +75,6 @@ int main() {
     expander.begin();
     LOG_I("boot", "led begin");
     led.begin();
-    LOG_I("boot", "input begin");
-    input.begin();
 
     // The Application drives the rig; the loop also services the editor link over
     // the USB CDC. (Transport isn't passed to the Application — we run the loop.)
@@ -112,10 +110,26 @@ int main() {
     LOG_I("boot", "wifi begin");
     wifi.begin();  // CYW43 init + auto-connect if a known network is enabled
 
+    // input.begin() must come AFTER wifi.begin(): cyw43_arch_init installs the SDK's
+    // GPIO dispatch handler for IO_IRQ_BANK0. gpio_add_raw_irq_handler_masked (used
+    // by the encoder IRQ) is called by that dispatcher — registering before it exists
+    // means the handler never fires. Moving here also lets the selector pin (no pull-up,
+    // active-high) fully settle from any boot-time capacitive transient before we latch
+    // the initial level[] state from exp_.readGpio().
+    LOG_I("boot", "input begin");
+    input.begin();
+
     // Onboard LED blips ~50ms on every handled input/command. Safe to drive only
     // after wifi.begin() has run cyw43_arch_init (the LED is on the CYW43 chip).
     LedPulse activityLed(50);
     app.setActivitySink([&activityLed] { activityLed.trigger(); });
+
+    // DIAGNOSTIC: blink the onboard LED on every raw encoder-pin edge, BEFORE any
+    // quadrature decoding. Turning the knob should blink the LED iff GP14/GP15 are
+    // actually moving and the IRQ is firing — this splits a wiring/IRQ fault (no
+    // blink) from a decode fault (blinks but no menu movement). Remove once the
+    // encoder is confirmed working.
+    input.setEncoderEdgeDebug([&activityLed] { activityLed.trigger(); });
 
     // Enable the hardware watchdog only after the (potentially slow) boot init is
     // done. Any single loop iteration that hangs > 8 s reboots the device. The
