@@ -57,37 +57,45 @@ void McpExpander::begin() {
     // INTCON=1; here INTCON=0 — interrupt-on-change compares to the previous value —
     // so DEFVAL is never read and we skip it):
     //   IODIR  = switch pins as inputs
-    //   GPPU   = pull-ups on, except the selector (B7) which the Pi left floating
-    //   IPOL   = invert the selector (B7) so its bit reads pressed-high
+    //   GPPU   = pull-ups on footswitches; selector B7 pull-up off (active-high, no ext pull-up)
+    //   IPOL   = invert selector B7 so register reads 1=released / 0=pressed, matching
+    //            the footswitch convention and ensuring the boot "previous state" in the
+    //            MCP is 1 (released) even when the pin floats low without a pull-up.
+    //            Matches the Python Footswitches.py: inputPolarity_pin(SELECTOR_SWITCH, True)
     //   GPINTEN= interrupt-on-change enabled for every switch
     //   INTCON = 0 (compare to previous value — fires on BOTH press AND release)
     //   IOCON  = 0x02 (INTPOL=1: INT outputs active-high, push-pull)
     //   MIRROR is intentionally NOT set: INTA and INTB are separate dedicated wires
     //   to the Pico. Both are wired, both are armed with edge-rise IRQs in McuInput.
     w8(IODIRA, MASK_A);   w8(IODIRB, MASK_B);
-    w8(IPOLA, 0x00);      w8(IPOLB, 0x00);  // selector not inverted — it's active-high (connects to VCC)
+    w8(IPOLA, 0x00);      w8(IPOLB, SEL_B);  // invert B7: released(LOW)→1, pressed(HIGH)→0
     w8(GPINTENA, MASK_A); w8(GPINTENB, MASK_B);
     w8(INTCONA, 0x00);    w8(INTCONB, 0x00);
     w8(IOCON, 0x02);
-    w8(GPPUA, MASK_A);    w8(GPPUB, MASK_B & ~SEL_B);  // 0x05: selector pull-up off (active-high, floats low when released)
+    w8(GPPUA, MASK_A);    w8(GPPUB, MASK_B & ~SEL_B);  // 0x05: selector pull-up off
     readGpio();  // clear any power-on interrupt latch
     LOG_I("mcp", "MCP23017 @ 0x%02X ready (IOC both-edges, INT active-high)", addr_);
 }
 
 uint16_t McpExpander::readGpio() {
     // GPIOA then GPIOB (auto-increment in BANK=0): low byte = A, high byte = B.
+    // Reading both registers clears INTA and INTB respectively.
     uint8_t reg = GPIOA;
     uint8_t v[2] = {0, 0};
-    i2c_write_blocking(i2c_, addr_, &reg, 1, true);
-    i2c_read_blocking(i2c_, addr_, v, 2, false);
+    int rc = i2c_write_timeout_us(i2c_, addr_, &reg, 1, true, kI2cTimeoutUs);
+    if (rc < 0) { LOG_E("mcp", "readGpio write failed rc=%d", rc); return 0xFFFF; }
+    rc = i2c_read_timeout_us(i2c_, addr_, v, 2, false, kI2cTimeoutUs);
+    if (rc < 0) { LOG_E("mcp", "readGpio read failed rc=%d", rc); return 0xFFFF; }
     return static_cast<uint16_t>(v[0] | (v[1] << 8));
 }
 
 uint16_t McpExpander::readIntf() {
     uint8_t reg = INTFA;
     uint8_t v[2] = {0, 0};
-    i2c_write_blocking(i2c_, addr_, &reg, 1, true);
-    i2c_read_blocking(i2c_, addr_, v, 2, false);
+    int rc = i2c_write_timeout_us(i2c_, addr_, &reg, 1, true, kI2cTimeoutUs);
+    if (rc < 0) { LOG_E("mcp", "readIntf write failed rc=%d", rc); return 0; }
+    rc = i2c_read_timeout_us(i2c_, addr_, v, 2, false, kI2cTimeoutUs);
+    if (rc < 0) { LOG_E("mcp", "readIntf read failed rc=%d", rc); return 0; }
     return static_cast<uint16_t>(v[0] | (v[1] << 8));
 }
 

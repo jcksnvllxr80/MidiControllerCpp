@@ -62,7 +62,7 @@ int main() {
     McpExpander expander(i2c0, pins::MCP23017_ADDR);
     Ssd1306Display display(spi0, pins::OLED_SCLK, pins::OLED_MOSI, pins::OLED_CS, pins::OLED_DC,
                            pins::OLED_RST);
-    McuLed led(pins::LED_R, pins::LED_G, pins::LED_B);
+    McuLed led(pins::LED_R, pins::LED_G, pins::LED_B, /*commonAnode=*/true);
     McuInput input(clock, expander, pins::FOOTSWITCH_BITS, 5, pins::SELECTOR_BIT, pins::MCP_INT_A,
                    pins::MCP_INT_B, pins::ENCODER_A, pins::ENCODER_B);
     // Persist "save defaults" in the last flash sector (survives reboot).

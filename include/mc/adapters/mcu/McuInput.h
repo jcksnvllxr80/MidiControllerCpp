@@ -60,8 +60,7 @@ private:
     void push(const InputEvent& e);
     bool accept(int idx, bool level, double nowS);  // simple time debounce
     void decodeEncoder();          // decode one encoder edge (IRQ context)
-    void serviceMcpInt();          // set intPending_ flag from IRQ context
-    static void gpioIrqHandler();  // raw GPIO IRQ: dispatches encoder vs MCP INT
+    static void gpioIrqHandler();  // raw GPIO IRQ: encoder A/B only
     static McuInput* s_isr_self_;
 
     static constexpr double kDebounce = 0.005;        // 5 ms
@@ -85,12 +84,13 @@ private:
     // CCW: seq visits 1 (B falls, A=1). 2ms per-line debounce lets through only
     // the first departure per physical detent (~11 raw edges land within 2ms).
     static constexpr uint32_t kEncBounceUs = 2000;
-    static constexpr uint32_t kEncCooldownUs = 333'000;  // 333 ms minimum between counted steps
+    static constexpr uint32_t kEncCooldownUs = 250'000;  // 250 ms minimum between counted steps
     static constexpr double kSelBounceS = 0.030;    // 30 ms selector debounce (no HW caps)
     int encAStable_ = 1, encBStable_ = 1;           // debounced A/B levels
     uint32_t encALastUs_ = 0, encBLastUs_ = 0;      // last accepted edge time per line
     uint32_t encLastStepUs_ = 0;                    // time of last counted step (IRQ only)
-    volatile int32_t encDelta_ = 0;    // net detents pending; IRQ writes, main drains
+    int encPrevSeq_ = 3;                            // previous non-zero seq (for direction at seq=2)
+    volatile int32_t encDelta_ = 0;     // net detents pending; IRQ writes, main drains
     volatile int32_t encStepsTotal_ = 0;  // DIAGNOSTIC: cumulative decoded steps
     volatile uint32_t encEdges_ = 0;   // raw edge count (for the optional LED probe)
     uint32_t lastEdges_ = 0;           // last drained edge count (main only)
@@ -110,8 +110,6 @@ private:
     uint8_t encEdgeTail_ = 0;           // read by service() only
 
     std::function<void()> encoderEdgeDebug_;  // optional raw-edge probe
-
-    volatile bool intPending_ = false;  // set by IRQ when INTA or INTB rises; cleared by serviceExpander
 
     bool rotaryDown_ = false;
     double rotaryStart_ = 0.0;

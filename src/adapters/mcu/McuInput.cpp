@@ -27,28 +27,21 @@ McuInput::McuInput(const IClock& clock, McpExpander& exp, const uint8_t* fswBits
     }
 }
 
-// Raw GPIO IRQ on both edges of A/B — exactly how the Pi firmware read the
-// encoder. Catches EVERY transition (sampling skipped the brief intermediate
-// states). Coexists with the cyw43 bank IRQ via a raw handler. Set in begin().
+// Raw GPIO IRQ on both edges of encoder A/B — exactly how the Pi firmware read
+// the encoder. Catches EVERY transition. Coexists with the cyw43 bank IRQ via a
+// raw handler. MCP INTA/INTB are polled in serviceExpander() instead of using
+// interrupts, so the encoder has the IRQ to itself.
 McuInput* McuInput::s_isr_self_ = nullptr;
 
 void McuInput::gpioIrqHandler() {
     McuInput* s = s_isr_self_;
     if (!s) return;
 
-    // Encoder A/B edges — decode immediately in IRQ so no transition is missed.
     uint32_t ea = gpio_get_irq_event_mask(s->encA_);
     uint32_t eb = gpio_get_irq_event_mask(s->encB_);
     if (ea) gpio_acknowledge_irq(s->encA_, ea);
     if (eb) gpio_acknowledge_irq(s->encB_, eb);
     if (ea || eb) s->decodeEncoder();
-
-    // MCP INTA/INTB rising edge — I2C cannot run in IRQ; set flag for main loop.
-    uint32_t ia = gpio_get_irq_event_mask(s->intA_);
-    uint32_t ib = gpio_get_irq_event_mask(s->intB_);
-    if (ia) gpio_acknowledge_irq(s->intA_, ia);
-    if (ib) gpio_acknowledge_irq(s->intB_, ib);
-    if (ia || ib) s->intPending_ = true;
 }
 
 
@@ -78,15 +71,21 @@ void McuInput::decodeEncoder() {
     a = encAStable_;
     b = encBStable_;
 
-    // The encoder rests at A=1,B=1 (seq=3).
-    // CW:  A dips low while B stays high → seq=2 (A=0,B=1)
-    // CCW: B dips low while A stays high → seq=1 (A=1,B=0)
-    // seq=0 (both low) is not a valid state for this encoder and is ignored.
+    // Step only at seq=2 — the first transition of either direction from rest.
+    // CW:  rest(3) → A falls → seq=2, prevSeq=3 → CW (+1)
+    // CCW: rest(3) → B falls → seq=1 → seq=2, prevSeq=1 → CCW (-1)
+    // Matches the Python get_rotary_movement logic exactly. seq=0 (both low) is
+    // an invalid transient; skip it but don't update encPrevSeq_.
     int seq = a + 2 * b;
-    int8_t move = (seq == 1) ? 1 : (seq == 2) ? -1 : 0;
+    int8_t move = 0;
+    if (seq == 2) {
+        if (encPrevSeq_ == 3) move = +1;
+        else if (encPrevSeq_ == 1) move = -1;
+    }
+    if (seq != 0) encPrevSeq_ = seq;
 
     if (move != 0 && static_cast<uint32_t>(now - encLastStepUs_) < kEncCooldownUs)
-        move = 0;  // within 100 ms cooldown — suppress
+        move = 0;
 
     EncEdge& ev = encEdgeRing_[encEdgeHead_++ % kEncEdgeRing];
     ev = {(int8_t)a, (int8_t)b, (int8_t)seq, move};
@@ -110,8 +109,7 @@ void McuInput::begin() {
         gpio_pull_down(pin);
     }
 
-    // All switches read released at boot (footswitches pulled high; the selector is
-    // inverted via IPOL, so "released" is handled in serviceExpander()).
+    // All switches start as released. Hardware sync below overrides with real state.
     for (auto& l : level_) l = true;
 
     encAStable_ = gpio_get(encA_);
@@ -120,22 +118,30 @@ void McuInput::begin() {
     // handler coexists with cyw43's use of the shared GPIO bank IRQ.
     LOG_I("input", "encoder A=GP%u B=GP%u idle A=%d B=%d", encA_, encB_, encAStable_, encBStable_);
     s_isr_self_ = this;
-    // One raw handler covers all four pins (encoder A/B + MCP INTA/INTB).
-    // Using a single gpio_add_raw_irq_handler_masked call keeps slot usage at 1.
+    // Encoder A/B get the raw IRQ handler exclusively. MCP INTA/INTB are polled
+    // in serviceExpander() via gpio_get() — the lines stay high until we read the
+    // expander GPIO register, so polling never misses a button event.
     gpio_add_raw_irq_handler_masked(
-        (1u << encA_) | (1u << encB_) | (1u << intA_) | (1u << intB_),
+        (1u << encA_) | (1u << encB_),
         &McuInput::gpioIrqHandler);
     gpio_set_irq_enabled(encA_, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true);
     gpio_set_irq_enabled(encB_, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true);
-    // MCP INT lines are active-high and level-held; catch the rising edge.
-    gpio_set_irq_enabled(intA_, GPIO_IRQ_EDGE_RISE, true);
-    gpio_set_irq_enabled(intB_, GPIO_IRQ_EDGE_RISE, true);
     irq_set_enabled(IO_IRQ_BANK0, true);
-    LOG_I("input", "GPIO IRQ armed enc=GP%u/GP%u mcp-int=GP%u/GP%u",
+    LOG_I("input", "GPIO IRQ armed enc=GP%u/GP%u (mcp-int GP%u/GP%u polled)",
           encA_, encB_, intA_, intB_);
 
     double now = clock_.now();
     for (auto& t : changedAt_) t = now;
+
+    // Sync level_[] to the real hardware state. For footswitches (active-low, pull-up
+    // on) bit=1 reliably means released. For the selector, IPOL=1 inverts so bit=1
+    // also reliably means released (pin floats LOW without a pull-up → IPOL → 1).
+    // This keeps level_ consistent with serviceExpander's selReleased convention and
+    // ensures the MCP's "previous state" matches level_ so the first press fires INT.
+    const uint16_t initWord = exp_.readGpio();
+    for (int i = 0; i < fswCount_; ++i)
+        level_[i] = (initWord >> fswBits_[i]) & 1u;
+    level_[fswCount_] = (initWord >> selectorBit_) & 1u;  // IPOL: 1=released, 0=pressed
 }
 
 void McuInput::push(const InputEvent& e) {
@@ -153,11 +159,10 @@ bool McuInput::accept(int idx, bool level, double nowS) {
 }
 
 void McuInput::serviceExpander(double nowS) {
-    // intPending_ is set by the IRQ handler when INTA or INTB rises.
-    // Clear it atomically before reading GPIO so a second INT that arrives
-    // during the I2C read is not lost (it will be caught next poll iteration).
-    bool intFired = intPending_;
-    if (intFired) intPending_ = false;
+    // MCP INT lines are active-high and held asserted until we read the GPIO
+    // register. Poll them directly — no interrupt needed since the line stays
+    // high until serviceExpander() clears it via exp_.readGpio().
+    bool intFired = gpio_get(intA_) || gpio_get(intB_);
     bool selRecheck = selRecheckAt_ > 0.0 && nowS >= selRecheckAt_;
     if (!intFired && !selRecheck) return;
     if (selRecheck) selRecheckAt_ = 0.0;
@@ -181,15 +186,15 @@ void McuInput::serviceExpander(double nowS) {
         }
     }
 
-    // Selector / rotary push button. Its IPOL bit is set on the expander, so the
-    // reported bit is inverted vs the footswitches: bit high == pressed. We map it
-    // back to the same "released" convention and time the hold -> RotaryPress.
+    // Selector / rotary push button. IPOL=1 on B7 inverts the hardware level so the
+    // register reads 1=released / 0=pressed — the same convention as the footswitches.
+    // "released" is therefore simply bit-is-1, no comparison needed.
     //
     // Uses kSelBounceS (30 ms) instead of the global kDebounce (5 ms) because the
     // rotary push switch bounces significantly without hardware caps, and bounce
     // transitions > 5 ms apart were being accepted as real press/release cycles,
     // causing spurious RotaryPress events and a shifted rotaryStart_ reference.
-    bool selReleased = ((word >> selectorBit_) & 1u) == 0;  // bit LOW = released (active-high: VCC when pressed, floats low when released)
+    bool selReleased = (word >> selectorBit_) & 1u;  // IPOL: 1=released(pin LOW), 0=pressed(pin HIGH)
     if (selReleased != level_[fswCount_]) {
         if (nowS - changedAt_[fswCount_] >= kSelBounceS) {
             level_[fswCount_] = selReleased;
