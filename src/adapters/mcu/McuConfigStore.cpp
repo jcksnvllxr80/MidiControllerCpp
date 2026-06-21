@@ -4,6 +4,8 @@
 #include <set>
 #include <stdexcept>
 
+#include "mc/adapters/mcu/Log.h"
+
 namespace mc::mcu {
 
 namespace {
@@ -30,15 +32,25 @@ bool McuConfigStore::exists(const std::string& key) const {
 std::string McuConfigStore::read(const std::string& key) const {
     auto it = overlay_.find(key);
     if (it != overlay_.end()) {
-        if (isTombstone(it->second)) throw std::runtime_error("McuConfigStore: deleted '" + key + "'");
+        if (isTombstone(it->second)) {
+            LOG_W("store", "read '%s' -> deleted (tombstone)", key.c_str());
+            throw std::runtime_error("McuConfigStore: deleted '" + key + "'");
+        }
+        LOG_D("store", "read '%s' (%zu bytes, overlay)", key.c_str(), it->second.size());
         return it->second;
     }
-    for (size_t i = 0; i < count_; ++i)
-        if (key == table_[i].key) return std::string(table_[i].data, table_[i].len);
+    for (size_t i = 0; i < count_; ++i) {
+        if (key == table_[i].key) {
+            LOG_D("store", "read '%s' (%zu bytes, embedded)", key.c_str(), table_[i].len);
+            return std::string(table_[i].data, table_[i].len);
+        }
+    }
+    LOG_W("store", "read '%s' -> not found", key.c_str());
     throw std::runtime_error("McuConfigStore: missing '" + key + "'");
 }
 
 void McuConfigStore::write(const std::string& key, const std::string& data) {
+    LOG_D("store", "write '%s' (%zu bytes)", key.c_str(), data.size());
     overlay_[key] = data;  // also un-deletes a previously tombstoned key
     if (persist_) persist_->save(overlay_);
 }

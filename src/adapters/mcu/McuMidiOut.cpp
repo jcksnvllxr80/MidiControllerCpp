@@ -4,6 +4,8 @@
 
 #include "pico/stdlib.h"  // sleep_us
 
+#include "mc/adapters/mcu/Log.h"
+
 namespace mc::mcu {
 
 namespace {
@@ -22,6 +24,10 @@ void McuMidiOut::send(const MidiMessage& msg) {
     // clocked out of the UART, so the 8-byte FIFO never overruns.
     const std::vector<uint8_t>& b = msg.bytes();
     if (b.empty()) return;
+    if (b.size() == 2)
+        LOG_D("midi", "tx %02X %02X", b[0], b[1]);
+    else if (b.size() >= 3)
+        LOG_D("midi", "tx %02X %02X %02X", b[0], b[1], b[2]);
     i2c_write_blocking(i2c_, addr_, b.data(), b.size(), false);
     sleep_us(kMidiByteUs * static_cast<unsigned>(b.size()));
 }

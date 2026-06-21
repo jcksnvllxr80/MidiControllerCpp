@@ -12,6 +12,7 @@
 // the microcontroller later.
 //
 #include <algorithm>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -50,6 +51,10 @@ public:
     void run();          // poll input -> dispatch until Quit / source exhausted
     bool handleEvent(const InputEvent& ev);  // false => stop loop
     void tick();         // periodic housekeeping (debounced "save defaults"); call each loop iter
+
+    // Optional: invoked once per handled input/command (physical or editor) so a
+    // host can flash an activity indicator. Portable code stays hardware-agnostic.
+    void setActivitySink(std::function<void()> fn) { activitySink_ = std::move(fn); }
 
     bool setupFailed() const { return setupFailed_; }  // config parse fell back to a safe shell
 
@@ -114,6 +119,7 @@ private:
     int displayedPartIdx_ = 0;
     bool quitRequested_ = false;
     std::string lastMessage_;
+    std::function<void()> activitySink_;  // optional activity-indicator pulse
     bool setupFailed_ = false;       // config parse threw -> running in a safe shell
     bool defaultsDirty_ = false;     // current set/song/part changed, not yet persisted
     double defaultsDirtyAt_ = 0.0;   // clock time of the change (for debounced flush)

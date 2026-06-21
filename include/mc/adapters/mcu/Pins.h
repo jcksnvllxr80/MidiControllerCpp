@@ -45,7 +45,11 @@ inline constexpr uint8_t OLED_CS   = 17;  // chip select  (driven as plain GPIO)
 inline constexpr uint8_t OLED_DC   = 20;  // data/command
 inline constexpr uint8_t OLED_RST  = 21;  // reset
 
-// ---- Rotary encoder (native GPIO, pull-ups, edge IRQ) ----
+// ---- Rotary encoder (native GPIO, pull-ups, edge-sampled) ----
+// Matches the ORIGINAL working Pi firmware: ENCODE_A = GPIO24 -> GP14,
+// ENCODE_B = GPIO23 -> GP15 (RotaryEncoder.py / midi_controller.py). NOTE: the
+// PCB net names "RotEncA/B" are labeled opposite to what that firmware calls
+// A/B — the running code is authoritative, so A=GP14, B=GP15.
 inline constexpr uint8_t ENCODER_A = 14;
 inline constexpr uint8_t ENCODER_B = 15;
 // NOTE: the rotary PUSH BUTTON is NOT a Pico GPIO — it is an MCP23017 input

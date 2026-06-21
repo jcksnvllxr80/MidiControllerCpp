@@ -33,6 +33,16 @@ I²C peripherals on the board.
 | **RGB knob LED** | Red (PWM) | GPIO16 | **GP10** | knob LED |
 | | Green (PWM) | GPIO20 | **GP11** | knob LED |
 | | Blue (PWM) | GPIO21 | **GP12** | knob LED |
+| **Power** | 3V3 | phys pin 17 | **3V3(OUT) pin 36** | net `VEE` → OLED supply (`J1`). (Pi pin 1, the other 3V3, is no-connect.) |
+| | 5V | phys pin 2 | **VBUS pin 40** | net `VCC` → chip VDD + pull-ups |
+| **Ground** (J35 GND pins) | GND | phys pin 6 | **GND pin 3** | board GND plane |
+| | GND | phys pin 9 | **GND pin 8** | board GND plane |
+| | GND | phys pin 14 | **GND pin 13** | board GND plane |
+| | GND | phys pin 20 | **GND pin 18** | board GND plane |
+| | GND | phys pin 25 | **GND pin 23** | board GND plane |
+| | GND | phys pin 30 | **GND pin 28** | board GND plane |
+| | GND | phys pin 34 | **GND pin 38** | board GND plane |
+| | GND | phys pin 39 | **AGND pin 33** (tie to GND; ADC unused) | board GND plane |
 
 The Pico-side assignments are the source of truth in
 [`include/mc/adapters/mcu/Pins.h`](../include/mc/adapters/mcu/Pins.h); the BCM

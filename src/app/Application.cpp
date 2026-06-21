@@ -80,6 +80,11 @@ void Application::run() {
 }
 
 bool Application::handleEvent(const InputEvent& ev) {
+    // Flash the activity indicator for any real input/command (knob turn,
+    // footswitch, rotary press, editor-driven change) — not idle/Quit polls.
+    if (activitySink_ && ev.type != InputEvent::Type::None && ev.type != InputEvent::Type::Quit)
+        activitySink_();
+
     switch (ev.type) {
         case InputEvent::Type::FootswitchShort:
             if (!state_.buttonsLocked) {

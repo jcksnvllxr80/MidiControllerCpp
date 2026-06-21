@@ -1,5 +1,7 @@
 #include "mc/adapters/mcu/McpExpander.h"
 
+#include "mc/adapters/mcu/Log.h"
+
 namespace mc::mcu {
 
 namespace {
@@ -27,15 +29,25 @@ constexpr uint8_t MASK_B = 0x85;
 constexpr uint8_t SEL_B  = 0x80;  // selector bit within bank B (B7)
 }  // namespace
 
+// Per-transfer timeout so a stuck/unpowered bus (e.g. a wiring or level-shift
+// fault) degrades to "no expander" instead of hanging the whole boot. ~2 ms is
+// far longer than any real 2-byte transfer at 400 kHz but still imperceptible.
+namespace {
+constexpr uint kI2cTimeoutUs = 2000;
+}  // namespace
+
 void McpExpander::w8(uint8_t reg, uint8_t val) {
     uint8_t buf[2] = {reg, val};
-    i2c_write_blocking(i2c_, addr_, buf, 2, false);
+    int rc = i2c_write_timeout_us(i2c_, addr_, buf, 2, false, kI2cTimeoutUs);
+    if (rc < 0) LOG_E("mcp", "w8 reg=0x%02X val=0x%02X failed rc=%d", reg, val, rc);
 }
 
 uint8_t McpExpander::r8(uint8_t reg) {
     uint8_t v = 0;
-    i2c_write_blocking(i2c_, addr_, &reg, 1, true);  // repeated start
-    i2c_read_blocking(i2c_, addr_, &v, 1, false);
+    int rc = i2c_write_timeout_us(i2c_, addr_, &reg, 1, true, kI2cTimeoutUs);  // repeated start
+    if (rc < 0) { LOG_E("mcp", "r8 reg=0x%02X write failed rc=%d", reg, rc); return v; }
+    rc = i2c_read_timeout_us(i2c_, addr_, &v, 1, false, kI2cTimeoutUs);
+    if (rc < 0) LOG_E("mcp", "r8 reg=0x%02X read failed rc=%d", reg, rc);
     return v;
 }
 
@@ -48,15 +60,18 @@ void McpExpander::begin() {
     //   GPPU   = pull-ups on, except the selector (B7) which the Pi left floating
     //   IPOL   = invert the selector (B7) so its bit reads pressed-high
     //   GPINTEN= interrupt-on-change enabled for every switch
-    //   INTCON = 0 (compare to previous value)
-    //   IOCON  = 0x02 (INTPOL=1: INT outputs active-high)
+    //   INTCON = 0 (compare to previous value — fires on BOTH press AND release)
+    //   IOCON  = 0x02 (INTPOL=1: INT outputs active-high, push-pull)
+    //   MIRROR is intentionally NOT set: INTA and INTB are separate dedicated wires
+    //   to the Pico. Both are wired, both are armed with edge-rise IRQs in McuInput.
     w8(IODIRA, MASK_A);   w8(IODIRB, MASK_B);
-    w8(IPOLA, 0x00);      w8(IPOLB, SEL_B);
+    w8(IPOLA, 0x00);      w8(IPOLB, 0x00);  // selector not inverted — it's active-high (connects to VCC)
     w8(GPINTENA, MASK_A); w8(GPINTENB, MASK_B);
     w8(INTCONA, 0x00);    w8(INTCONB, 0x00);
     w8(IOCON, 0x02);
-    w8(GPPUA, MASK_A);    w8(GPPUB, MASK_B & ~SEL_B);  // 0x05: selector pull-up off
+    w8(GPPUA, MASK_A);    w8(GPPUB, MASK_B & ~SEL_B);  // 0x05: selector pull-up off (active-high, floats low when released)
     readGpio();  // clear any power-on interrupt latch
+    LOG_I("mcp", "MCP23017 @ 0x%02X ready (IOC both-edges, INT active-high)", addr_);
 }
 
 uint16_t McpExpander::readGpio() {
