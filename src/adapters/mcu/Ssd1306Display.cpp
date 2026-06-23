@@ -155,6 +155,12 @@ void Ssd1306Display::render(int titleOffset) {
 }
 
 void Ssd1306Display::setMessage(const std::string& msg) {
+    // Only redraw when the content actually changes. A repeated identical message
+    // (e.g. an encoder turn rejected at a list boundary, or a re-emit of the same
+    // screen) must NOT trigger a full framebuffer rebuild + blocking SPI flush —
+    // that blocking work is what was stranding the encoder IRQ debounce state.
+    if (msg == lastMsg_) return;
+    lastMsg_ = msg;
     LOG_I("oled", "msg: %s", msg.c_str());
     // Split on " - " into segments. The title is everything up to the "<n>BPM"
     // field (so a song name that itself contains " - <sub-desc>", e.g.
@@ -225,6 +231,7 @@ void Ssd1306Display::tick(double nowSec) {
 }
 
 void Ssd1306Display::clear() {
+    lastMsg_.clear();  // force the next setMessage to redraw, even if identical
     title_.clear();
     bodyCount_ = 0;
     titlePxWidth_ = 0;

@@ -57,6 +57,7 @@ private:
     uint8_t fb_[kWidth * kPages] = {0};
 
     // Parsed message + marquee state.
+    std::string lastMsg_;       // last message handled — skip re-render if unchanged
     std::string title_;
     std::string body_[kMaxBody];
     int bodyCount_ = 0;

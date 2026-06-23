@@ -41,57 +41,67 @@ void McuInput::gpioIrqHandler() {
     uint32_t eb = gpio_get_irq_event_mask(s->encB_);
     if (ea) gpio_acknowledge_irq(s->encA_, ea);
     if (eb) gpio_acknowledge_irq(s->encB_, eb);
-    if (ea || eb) s->decodeEncoder();
+    if (ea || eb) s->decodeEncoder(ea, eb);
 }
 
 
-void McuInput::decodeEncoder() {
+void McuInput::decodeEncoder(uint32_t ea, uint32_t eb) {
     uint32_t now = time_us_32();
-    int a = gpio_get(encA_);
-    int b = gpio_get(encB_);
 
-    // Per-line debounce: a real transition is accepted only if the line has been
-    // quiet for kEncBounceUs; a bounce burst after it is ignored. Collapses the
-    // hundreds of spurious edges into one clean transition per line.
+    // Both-edge IRQs: an edge on a line means that line TOGGLED. The bouncy line has
+    // usually settled back to rest before the handler runs, so a live gpio_get is
+    // unreliable — instead we keep an internal record per line and flip it on each
+    // accepted edge. The per-line quiet-time gate (kEncBounceUs) collapses each
+    // bounce burst so exactly one flip lands per real transition.
     bool changed = false;
-    if (a != encAStable_ && static_cast<uint32_t>(now - encALastUs_) >= kEncBounceUs) {
-        encAStable_ = a;
+    if (ea && static_cast<uint32_t>(now - encALastUs_) >= kEncBounceUs) {
+        encAStable_ ^= 1;
         encALastUs_ = now;
         ++encEdgesA_;
         changed = true;
     }
-    if (b != encBStable_ && static_cast<uint32_t>(now - encBLastUs_) >= kEncBounceUs) {
-        encBStable_ = b;
+    if (eb && static_cast<uint32_t>(now - encBLastUs_) >= kEncBounceUs) {
+        encBStable_ ^= 1;
         encBLastUs_ = now;
         ++encEdgesB_;
         changed = true;
     }
-    if (!changed) return;
+    if (!changed) return;  // edge fell inside the bounce window
     ++encEdges_;
-    a = encAStable_;
-    b = encBStable_;
+    int a = encAStable_;
+    int b = encBStable_;
 
-    // Step only at seq=2 — the first transition of either direction from rest.
-    // CW:  rest(3) → A falls → seq=2, prevSeq=3 → CW (+1)
-    // CCW: rest(3) → B falls → seq=1 → seq=2, prevSeq=1 → CCW (-1)
-    // Matches the Python get_rotary_movement logic exactly. seq=0 (both low) is
-    // an invalid transient; skip it but don't update encPrevSeq_.
+    // Count a step on these transitions, nothing on any other:
+    //   1 → 3 : CW (+1)      0 → 2 : CW (+1)
+    //   2 → 3 : CCW (-1)     0 → 1 : CCW (-1)
     int seq = a + 2 * b;
+    int8_t prevSeq = (int8_t)encPrevSeq_;  // before update, for the log
     int8_t move = 0;
-    if (seq == 2) {
-        if (encPrevSeq_ == 3) move = +1;
-        else if (encPrevSeq_ == 1) move = -1;
+    if (seq == 3) {
+        if (encPrevSeq_ == 1) move = +1;
+        else if (encPrevSeq_ == 2) move = -1;
+    } else if (seq == 2) {
+        if (encPrevSeq_ == 0) move = +1;
+    } else if (seq == 1) {
+        if (encPrevSeq_ == 0) move = -1;
     }
-    if (seq != 0) encPrevSeq_ = seq;
+    encPrevSeq_ = seq;  // every state is a valid direction reference now (incl. 0)
 
-    if (move != 0 && static_cast<uint32_t>(now - encLastStepUs_) < kEncCooldownUs)
-        move = 0;
+    // After a counted CW/CCW, stay quiet for kEncCooldownUs: don't count another
+    // step and don't log the intermediate flips happening during that window. We
+    // still flip the internal A/B record above so the decoder stays in sync.
+    bool cooling = static_cast<uint32_t>(now - encLastStepUs_) < kEncCooldownUs;
+    int8_t countedMove = (move != 0 && !cooling) ? move : 0;
+    if (countedMove != 0) encLastStepUs_ = now;  // opens a fresh cooldown window
 
-    EncEdge& ev = encEdgeRing_[encEdgeHead_++ % kEncEdgeRing];
-    ev = {(int8_t)a, (int8_t)b, (int8_t)seq, move};
+    if (!cooling) {
+        EncFlip& f = encFlipRing_[encFlipHead_++ % kEncFlipRing];
+        f = {(int8_t)(ea ? 1 : 0), (int8_t)(eb ? 1 : 0), (int8_t)a, (int8_t)b,
+             (int8_t)seq, prevSeq, countedMove};
+    }
 
-    if (move > 0) { ++encDelta_; ++encStepsTotal_; encLastStepUs_ = now; }
-    else if (move < 0) { --encDelta_; --encStepsTotal_; encLastStepUs_ = now; }
+    if (countedMove > 0) { ++encDelta_; ++encStepsTotal_; }
+    else if (countedMove < 0) { --encDelta_; --encStepsTotal_; }
 }
 
 void McuInput::begin() {
@@ -178,8 +188,6 @@ void McuInput::serviceExpander(double nowS) {
     if (selRecheck) selRecheckAt_ = 0.0;
 
     const uint16_t word = exp_.readGpio();
-    LOG_I("input", "gpio word=0x%04X selBit=%d intA=%d intB=%d",
-          word, (word >> selectorBit_) & 1u, gpio_get(intA_), gpio_get(intB_));
 
     // Footswitches (active-low: bit high == released, low == pressed).
     for (int i = 0; i < fswCount_; ++i) {
@@ -239,20 +247,17 @@ void McuInput::service() {
     int32_t delta = encDelta_;
     encDelta_ = 0;
     uint32_t edges = encEdges_;
-    uint8_t edgeHead = encEdgeHead_;  // ring watermark: log up to here
+    uint8_t flipHead = encFlipHead_;  // ring watermark to log up to
     restore_interrupts(save);
 
-    while (encEdgeTail_ != edgeHead) {
-        const EncEdge& e = encEdgeRing_[encEdgeTail_++ % kEncEdgeRing];
-        if (e.move > 0)
-            LOG_I("enc", "edge A=%d B=%d seq=%d  CW",  (int)e.a, (int)e.b, (int)e.seq);
-        else if (e.move < 0)
-            LOG_I("enc", "edge A=%d B=%d seq=%d  CCW", (int)e.a, (int)e.b, (int)e.seq);
-        else
-            LOG_I("enc", "edge A=%d B=%d seq=%d  rest", (int)e.a, (int)e.b, (int)e.seq);
+    // Log only valid, debounced transitions (one line per accepted flip).
+    while (encFlipTail_ != flipHead) {
+        const EncFlip& f = encFlipRing_[encFlipTail_++ % kEncFlipRing];
+        const char* dir = f.move > 0 ? "CW" : f.move < 0 ? "CCW" : "rest";
+        LOG_I("enc", "flip edgeA=%d edgeB=%d -> A=%d B=%d seq=%d prev=%d %s",
+              (int)f.ea, (int)f.eb, (int)f.a, (int)f.b, (int)f.seq, (int)f.prevSeq, dir);
     }
-    if (delta > 0) LOG_I("enc", "-> CW  delta=+%ld", (long)delta);
-    if (delta < 0) LOG_I("enc", "-> CCW delta=%ld",  (long)delta);
+
     for (; delta > 0; --delta) push({InputEvent::Type::EncoderCW, 0, 0});
     for (; delta < 0; ++delta) push({InputEvent::Type::EncoderCCW, 0, 0});
 

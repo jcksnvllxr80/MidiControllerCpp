@@ -142,6 +142,7 @@ int main() {
     while (true) {
         watchdog_update();
         while (input.poll(ev)) app.handleEvent(ev);
+
         transport.poll();
         wifi.poll();
         display.tick(clock.now());  // drive the title marquee

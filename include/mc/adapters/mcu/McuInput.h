@@ -59,7 +59,7 @@ private:
     void serviceExpander(double nowS);
     void push(const InputEvent& e);
     bool accept(int idx, bool level, double nowS);  // simple time debounce
-    void decodeEncoder();          // decode one encoder edge (IRQ context)
+    void decodeEncoder(uint32_t ea, uint32_t eb);  // decode one encoder edge (IRQ context)
     static void gpioIrqHandler();  // raw GPIO IRQ: encoder A/B only
     static McuInput* s_isr_self_;
 
@@ -83,8 +83,8 @@ private:
     // Encoder rest state is A=1,B=1 (seq=3). CW: seq visits 2 (A falls, B=1).
     // CCW: seq visits 1 (B falls, A=1). 2ms per-line debounce lets through only
     // the first departure per physical detent (~11 raw edges land within 2ms).
-    static constexpr uint32_t kEncBounceUs = 2000;
-    static constexpr uint32_t kEncCooldownUs = 250'000;  // 250 ms minimum between counted steps
+    static constexpr uint32_t kEncBounceUs = 7'000;
+    static constexpr uint32_t kEncCooldownUs = 100'000;  // 100 ms quiet window after a counted step
     static constexpr double kSelBounceS = 0.030;    // 30 ms selector debounce (no HW caps)
     // Backstop: re-read the expander GPIO at least this often even when no MCP INT
     // line is asserted. The selector pin has no pull-up (active-high, IPOL-inverted),
@@ -95,7 +95,7 @@ private:
     static constexpr double kSelPollS = 0.008;      // 8 ms expander backstop poll
     int encAStable_ = 1, encBStable_ = 1;           // debounced A/B levels
     uint32_t encALastUs_ = 0, encBLastUs_ = 0;      // last accepted edge time per line
-    uint32_t encLastStepUs_ = 0;                    // time of last counted step (IRQ only)
+    uint32_t encLastStepUs_ = 0;                    // time of last counted CW/CCW step
     int encPrevSeq_ = 3;                            // previous non-zero seq (for direction at seq=2)
     volatile int32_t encDelta_ = 0;     // net detents pending; IRQ writes, main drains
     volatile int32_t encStepsTotal_ = 0;  // DIAGNOSTIC: cumulative decoded steps
@@ -104,17 +104,20 @@ private:
     volatile uint32_t encEdgesA_ = 0;  // DIAGNOSTIC: debounced edges per line
     volatile uint32_t encEdgesB_ = 0;
 
-    // Per-edge ring: IRQ pushes one entry per debounced A/B transition so service()
-    // can log the sequence without calling printf in IRQ context.
-    struct EncEdge {
-        int8_t a, b;   // debounced GPIO levels at this edge
-        int8_t seq;    // = a + 2*b  (0-3)
-        int8_t move;   // +1=CW, -1=CCW, 0=rest/idle
+    // Accepted-flip ring: the IRQ pushes one entry per ACCEPTED A/B transition so
+    // service() can log it from main context (printf is not IRQ-safe). Rejected
+    // bounces are not recorded — only valid, debounced transitions.
+    struct EncFlip {
+        int8_t ea, eb;        // which line(s) edged this IRQ
+        int8_t a, b;          // new internal A/B levels after the flip
+        int8_t seq;           // = a + 2*b (0-3)
+        int8_t prevSeq;       // previous seq (direction reference)
+        int8_t move;          // +1=CW, -1=CCW, 0=intermediate/rest
     };
-    static constexpr uint8_t kEncEdgeRing = 16;  // power-of-2 so uint8_t overflow is safe
-    EncEdge encEdgeRing_[kEncEdgeRing]{};
-    volatile uint8_t encEdgeHead_ = 0;  // written by IRQ
-    uint8_t encEdgeTail_ = 0;           // read by service() only
+    static constexpr uint8_t kEncFlipRing = 16;  // power-of-2 so uint8_t wrap is safe
+    EncFlip encFlipRing_[kEncFlipRing]{};
+    volatile uint8_t encFlipHead_ = 0;  // written by IRQ
+    uint8_t encFlipTail_ = 0;           // read by service() only
 
     std::function<void()> encoderEdgeDebug_;  // optional raw-edge probe
 
