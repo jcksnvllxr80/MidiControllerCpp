@@ -11,15 +11,20 @@
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"  // pico_get_unique_board_id_string
 
+#include "hardware/i2c.h"
+#include "hardware/spi.h"
+
 #include "mc/adapters/mcu/EmbeddedData.h"
+#include "mc/adapters/mcu/Log.h"
 #include "mc/adapters/mcu/FlashKv.h"
+#include "mc/adapters/mcu/McpExpander.h"
 #include "mc/adapters/mcu/McuClock.h"
 #include "mc/adapters/mcu/McuConfigStore.h"
 #include "mc/adapters/mcu/McuInput.h"
 #include "mc/adapters/mcu/McuLed.h"
+#include "mc/adapters/mcu/LedPulse.h"
 #include "mc/adapters/mcu/McuMidiOut.h"
 #include "mc/adapters/mcu/McuSystemControl.h"
-#include "mc/adapters/mcu/McuTempoOut.h"
 #include "mc/adapters/mcu/Pins.h"
 #include "mc/adapters/mcu/Ssd1306Display.h"
 #include "mc/adapters/mcu/WifiManager.h"
@@ -36,35 +41,45 @@ using namespace mc::mcu;
 
 int main() {
     stdio_init_all();
+    LOG_I("boot", "stdio ready");
 
     if (watchdog_caused_reboot()) {
-        // Last run hung and the watchdog reset us. Noise the editor codec ignores;
-        // useful when watching the serial log to know a recovery happened.
-        printf("watchdog: recovered from a hang\n");
+        LOG_W("boot", "recovered from a watchdog hang");
     }
 
     McuClock clock;
-    McuMidiOut midiA(uart0, pins::MIDI_A_TX);
-    McuMidiOut midiB(uart1, pins::MIDI_B_TX);
-    TeeMidiOut midi(&midiA, &midiB);  // mirror to both DIN jacks
-    McuTempoOut tempo(pins::TEMPO, 4);
-    Ssd1306Display display(i2c1, pins::OLED_I2C_ADDR, pins::OLED_SDA, pins::OLED_SCL);
-    McuLed led(pins::LED_R, pins::LED_G, pins::LED_B);
-    McuInput input(clock, pins::FOOTSWITCH, 6, pins::ENCODER_A, pins::ENCODER_B, pins::ROTARY_PB);
+
+    // Shared I2C bus (i2c0): the MCP23017 expander (0x22) and the PIC MIDI bridge
+    // (0x04) both live here, exactly as on the Pi's single I2C bus. Bring it up once.
+    i2c_init(i2c0, 400'000);
+    gpio_set_function(pins::I2C_SDA, GPIO_FUNC_I2C);
+    gpio_set_function(pins::I2C_SCL, GPIO_FUNC_I2C);
+    gpio_pull_up(pins::I2C_SDA);
+    gpio_pull_up(pins::I2C_SCL);
+    LOG_I("boot", "I2C bus up at 400 kHz (SDA=GP%u SCL=GP%u)", pins::I2C_SDA, pins::I2C_SCL);
+
+    McuMidiOut midi(i2c0, pins::MIDI_PIC_ADDR);  // raw MIDI -> PIC -> 6 jacks
+    McpExpander expander(i2c0, pins::MCP23017_ADDR);
+    Ssd1306Display display(spi0, pins::OLED_SCLK, pins::OLED_MOSI, pins::OLED_CS, pins::OLED_DC,
+                           pins::OLED_RST);
+    McuLed led(pins::LED_R, pins::LED_G, pins::LED_B, /*commonAnode=*/true);
+    McuInput input(clock, expander, pins::FOOTSWITCH_BITS, 5, pins::SELECTOR_BIT, pins::MCP_INT_A,
+                   pins::MCP_INT_B, pins::ENCODER_A, pins::ENCODER_B);
     // Persist "save defaults" in the last flash sector (survives reboot).
     FlashKv persist(PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE);
     McuConfigStore store(kEmbeddedData, kEmbeddedDataCount, &persist);
 
-    midiA.begin();
-    midiB.begin();
-    tempo.begin();
-    display.begin();
+    LOG_I("boot", "display begin");
+    display.begin();   // bring up the OLED FIRST so a stuck I2C bus can't keep it dark
+    LOG_I("boot", "expander begin");
+    expander.begin();
+    LOG_I("boot", "led begin");
     led.begin();
-    input.begin();
 
     // The Application drives the rig; the loop also services the editor link over
     // the USB CDC. (Transport isn't passed to the Application — we run the loop.)
-    Application app({&store, &midi, &tempo, &display, &led, &clock, &input, nullptr});
+    Application app({&store, &midi, &display, &led, &clock, &input, nullptr});
+    LOG_I("boot", "app setup");
     app.setup();
 
     // WiFi: connects to a saved network on boot; the editor link also runs over
@@ -80,29 +95,58 @@ int main() {
     char boardId[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1];
     pico_get_unique_board_id_string(boardId, sizeof(boardId));
     protocol.setDeviceId(boardId);
+    LOG_I("boot", "board id: %s", boardId);
 
     wifi.setProtocol(&protocol);
 
 #ifdef MC_ENABLE_USB_EDITOR
     UsbConfigTransport transport(protocol);  // raw USB vendor link (WinUSB)
+    LOG_I("boot", "transport: raw USB vendor (WinUSB)");
 #else
     StdioConfigTransport transport(protocol);  // USB CDC link
+    LOG_I("boot", "transport: stdio USB CDC");
 #endif
     transport.begin();
+    LOG_I("boot", "wifi begin");
     wifi.begin();  // CYW43 init + auto-connect if a known network is enabled
+
+    // input.begin() must come AFTER wifi.begin(): cyw43_arch_init installs the SDK's
+    // GPIO dispatch handler for IO_IRQ_BANK0. gpio_add_raw_irq_handler_masked (used
+    // by the encoder IRQ) is called by that dispatcher — registering before it exists
+    // means the handler never fires. Moving here also lets the selector pin (no pull-up,
+    // active-high) fully settle from any boot-time capacitive transient before we latch
+    // the initial level[] state from exp_.readGpio().
+    LOG_I("boot", "input begin");
+    input.begin();
+
+    // Onboard LED blips ~50ms on every handled input/command. Safe to drive only
+    // after wifi.begin() has run cyw43_arch_init (the LED is on the CYW43 chip).
+    LedPulse activityLed(50);
+    app.setActivitySink([&activityLed] { activityLed.trigger(); });
+
+    // DIAGNOSTIC: blink the onboard LED on every raw encoder-pin edge, BEFORE any
+    // quadrature decoding. Turning the knob should blink the LED iff GP14/GP15 are
+    // actually moving and the IRQ is firing — this splits a wiring/IRQ fault (no
+    // blink) from a decode fault (blinks but no menu movement). Remove once the
+    // encoder is confirmed working.
+    input.setEncoderEdgeDebug([&activityLed] { activityLed.trigger(); });
 
     // Enable the hardware watchdog only after the (potentially slow) boot init is
     // done. Any single loop iteration that hangs > 8 s reboots the device. The
     // longest in-loop work — a ~30 KB get_pedal parse/stream or a debounced flash
     // write — is well under that, and WiFi is serviced non-blocking in poll().
     watchdog_enable(8000, /*pause_on_debug=*/true);
+    LOG_I("boot", "watchdog armed 8s — entering main loop");
 
     InputEvent ev;
     while (true) {
         watchdog_update();
         while (input.poll(ev)) app.handleEvent(ev);
+
         transport.poll();
         wifi.poll();
+        display.tick(clock.now());  // drive the title marquee
+        activityLed.update();       // clear the activity blip after its window
         app.tick();  // debounced "save defaults" flush, off the input path
         sys.poll();  // performs a scheduled reboot/BOOTSEL once the ack has flushed
         tight_loop_contents();

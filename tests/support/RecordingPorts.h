@@ -5,7 +5,6 @@
 
 #include "mc/ports/IDisplay.h"
 #include "mc/ports/ILed.h"
-#include "mc/ports/ITempoOut.h"
 
 namespace mc::test {
 
@@ -16,14 +15,6 @@ public:
     const std::string& last() const { return messages.back(); }
     std::vector<std::string> messages;
     int cleared = 0;
-};
-
-class RecordingTempoOut : public ITempoOut {
-public:
-    void setBpm(double bpm) override { bpms.push_back(bpm); }
-    void tap() override { taps++; }
-    std::vector<double> bpms;
-    int taps = 0;
 };
 
 class NullLed : public ILed {

@@ -24,15 +24,6 @@ TEST(SimDisplay, RecordsAndLogs) {
     EXPECT_NE(os.str().find("clear"), std::string::npos);
 }
 
-TEST(SimTempo, LogsBpmAndTap) {
-    std::ostringstream os;
-    sim::LoggingTempoOut t(os);
-    t.setBpm(110.0);
-    t.tap();
-    EXPECT_NE(os.str().find("110"), std::string::npos);
-    EXPECT_NE(os.str().find("tap"), std::string::npos);
-}
-
 TEST(SimLed, LogsColorAndBrightness) {
     std::ostringstream os;
     sim::LoggingLed led(os);

@@ -4,6 +4,8 @@
 #include "pico/bootrom.h"  // reset_usb_boot
 #include "pico/time.h"
 
+#include "mc/adapters/mcu/Log.h"
+
 namespace mc::mcu {
 
 namespace {
@@ -12,11 +14,13 @@ uint32_t nowMs() { return to_ms_since_boot(get_absolute_time()); }
 }  // namespace
 
 void McuSystemControl::rebootToBootloader() {
+    LOG_I("sys", "reboot -> BOOTSEL requested");
     pending_ = Pending::Bootloader;
     requestedAtMs_ = nowMs();
 }
 
 void McuSystemControl::reboot() {
+    LOG_I("sys", "reboot -> app requested");
     pending_ = Pending::App;
     requestedAtMs_ = nowMs();
 }

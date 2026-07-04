@@ -17,6 +17,42 @@ int indexOf(const std::vector<std::string>& v, const std::string& s, int dflt = 
 // Debounced so rapid footswitch part changes during a song don't stall the rig on
 // an IRQ-masked flash write mid-performance.
 constexpr double kDefaultsPersistDelaySec = 1.5;
+
+// The selectable values for one editable parameter leaf, mirroring the Python
+// parse_option_dict display rules (RotaryEncoder.py): a 'dict' shows its keys
+// (sorted by MIDI value, ascending), a min/max shows the integer range, on/off
+// and press/release show their two labels, and a 'control change' shows its
+// options. Returns empty when the action carries no user-choosable value.
+std::vector<std::string> paramItems(const Action& a) {
+    std::vector<std::string> items;
+    if (!a.dict.empty()) {
+        auto sorted = a.dict;  // copy: (name, value) pairs in JSON order
+        std::stable_sort(sorted.begin(), sorted.end(),
+                         [](const auto& l, const auto& r) { return l.second < r.second; });
+        for (const auto& kv : sorted) items.push_back(kv.first);
+    } else if (a.min && a.max) {
+        for (long v = *a.min; v <= *a.max; ++v) items.push_back(std::to_string(v));
+    } else if (a.on && a.off) {
+        items = {"off", "on"};
+    } else if (a.press && a.release) {
+        items = {"press", "release"};
+    } else if (a.controlChange && !a.controlChange->options.empty()) {
+        items = a.controlChange->options;
+    }
+    return items;
+}
+
+// Turn a selected menu item back into the Value MidiPedal expects. The dict /
+// on-off / press-release / control-change branches are string-keyed (convertToInt
+// looks them up by name); only the bare min/max range is a literal integer. This
+// branch order matches paramItems exactly, so a numeric-looking dict key is never
+// mistaken for a range integer.
+Value paramValue(const Action& a, const std::string& item) {
+    const bool stringKeyed = !a.dict.empty() || (a.on && a.off) || (a.press && a.release) ||
+                             (a.controlChange && !a.controlChange->options.empty());
+    if (stringKeyed) return Value{item};
+    return Value{static_cast<long>(std::stol(item))};
+}
 }  // namespace
 
 Application::Application(Ports ports) : p_(ports) {}
@@ -80,6 +116,11 @@ void Application::run() {
 }
 
 bool Application::handleEvent(const InputEvent& ev) {
+    // Flash the activity indicator for any real input/command (knob turn,
+    // footswitch, rotary press, editor-driven change) — not idle/Quit polls.
+    if (activitySink_ && ev.type != InputEvent::Type::None && ev.type != InputEvent::Type::Quit)
+        activitySink_();
+
     switch (ev.type) {
         case InputEvent::Type::FootswitchShort:
             if (!state_.buttonsLocked) {
@@ -185,7 +226,6 @@ void Application::loadPart() {
         if (auto s = asString(st->settings); s && !s->empty()) pedal->setSetting(*s);
     }
     setSongInfoMessage();
-    if (p_.tempo) p_.tempo->setBpm(currentSong().bpmValue());
 
     // Remember this committed selection as the boot default. (currentSet is set by
     // the Sets menu; song/part funnel through here from every commit path.)
@@ -298,6 +338,8 @@ void Application::buildMenu() {
             menu_.changeMenuNodes();
         });
 
+    buildPedalMenu();  // Setup -> Midi Pedals -> pedal -> group -> param
+
     // ----- Global: Knob Color / Brightness / Button Lock -----
     static const std::vector<std::string> kColors = {"Off", "Blue",    "Green",  "Cyan",
                                                      "Red", "Magenta", "Yellow", "White"};
@@ -341,6 +383,110 @@ void Application::buildMenu() {
             state_.buttonsLocked = (lockNode_->dataItems[lockNode_->dataPosition] == "True");
             menu_.changeMenuNodes();
         });
+}
+
+// Restores the Python on-device pedal editor (RotaryEncoder.show_midi_pedals and
+// friends): Setup -> Midi Pedals -> [pedal] -> [group] -> [param] -> value. Edits
+// are applied live through the existing MidiPedal methods (the same path loadPart
+// uses); like the Python original they emit MIDI immediately and are not persisted
+// back to the song file.
+//
+// CRITICAL: the tree is built LAZILY, one level per entry, NOT eagerly at boot. An
+// eager build allocates ~160 nodes plus their closures during setup() — before the
+// watchdog is armed and outside the boot try/catch — which on the MCU can throw
+// bad_alloc / fragment the heap and brick powerup with a blank screen. The MenuTree
+// engine already supports lazy build: a childless node carrying a `func` runs it on
+// first entry (changeMenuNodes), so each `func` here populates its own children once
+// (guarded by the empty() check) and the node then behaves as an ordinary branch.
+// Boot therefore allocates exactly one node ("Midi Pedals").
+void Application::buildPedalMenu() {
+    midiPedalsMenu_ = setupMenu_->addChild("Midi Pedals");
+    midiPedalsMenu_->func = [this] {
+        if (!midiPedalsMenu_->children.empty()) return;  // build pedal list once
+        for (const auto& pedalPtr : pedals_) {
+            MidiPedal* mp = pedalPtr.get();
+            auto cfgIt = pedalConfigs_.find(mp->name());
+            if (cfgIt == pedalConfigs_.end()) continue;  // pedal built but config missing
+            const PedalConfig* cfg = &cfgIt->second;
+
+            MenuNode* pedalNode = midiPedalsMenu_->addChild(mp->name());
+            pedalNode->func = [this, pedalNode, cfg, mp] { buildPedalGroups(pedalNode, cfg, mp); };
+        }
+    };
+}
+
+// Lazily builds one pedal's config-group children on first entry (Knobs/Switches,
+// Parameters, Set Preset, Set Tempo, Engage, Bypass, Toggle Bypass), in config order.
+void Application::buildPedalGroups(MenuNode* pedalNode, const PedalConfig* cfg, MidiPedal* mp) {
+    if (!pedalNode->children.empty()) return;  // build once
+    for (const auto& grpKv : cfg->root.children) {
+        const std::string& groupName = grpKv.first;
+        const Action* groupAction = &grpKv.second;
+
+        if (groupName == "Knobs/Switches" || groupName == "Parameters") {
+            // A branch whose leaves (one per knob/param) are built lazily on entry.
+            MenuNode* groupNode = pedalNode->addChild(groupName);
+            groupNode->func = [this, groupNode, groupAction, mp] {
+                buildParamLeaves(groupNode, groupAction, mp);
+            };
+        } else if (groupName == "Set Preset" || groupName == "Set Tempo") {
+            // A value-list leaf over the group's own min/max range.
+            if (paramItems(*groupAction).empty()) continue;
+            MenuNode* leaf = pedalNode->addChild(groupName);
+            leaf->func = [leaf, groupAction, groupName] {
+                leaf->dataItems = paramItems(*groupAction);
+                leaf->dataPrompt = groupName + ":";
+                leaf->dataPosition = 0;
+            };
+            leaf->dataFunc = [this, leaf, mp, groupName] {
+                Value v{static_cast<long>(std::stol(leaf->dataItems[leaf->dataPosition]))};
+                if (groupName == "Set Preset") mp->setPreset(v);
+                else mp->setTempo(v);
+                menu_.changeMenuNodes(leaf->parent);
+            };
+        } else if (groupName == "Engage" || groupName == "Bypass" || groupName == "Toggle Bypass") {
+            // No value to choose: a NO/YES confirm leaf that fires the action (a leaf
+            // needs a non-empty data list to be selectable at all).
+            MenuNode* leaf = pedalNode->addChild(groupName);
+            leaf->func = [leaf, groupName] {
+                leaf->dataItems = {"NO", "YES"};
+                leaf->dataPrompt = groupName + "?";
+                leaf->dataPosition = 0;
+            };
+            leaf->dataFunc = [this, leaf, mp, groupName] {
+                if (leaf->dataItems[leaf->dataPosition] == "YES") {
+                    if (groupName == "Engage") mp->turnOn();
+                    else if (groupName == "Bypass") mp->turnOff();
+                    else mp->toggle();
+                }
+                menu_.changeMenuNodes(leaf->parent);
+            };
+        }
+        // Unknown groups (e.g. display-only metadata) are skipped.
+    }
+}
+
+// Lazily builds one Knobs/Switches or Parameters group's editable leaves on first
+// entry — one per knob/param that exposes a choosable value.
+void Application::buildParamLeaves(MenuNode* groupNode, const Action* groupAction, MidiPedal* mp) {
+    if (!groupNode->children.empty()) return;  // build once
+    for (const auto& paramKv : groupAction->children) {
+        const std::string& paramName = paramKv.first;
+        const Action* info = &paramKv.second;
+        if (paramItems(*info).empty()) continue;  // nothing to choose -> skip (Python's `if value:`)
+
+        MenuNode* leaf = groupNode->addChild(paramName);
+        leaf->func = [leaf, info, paramName] {
+            leaf->dataItems = paramItems(*info);
+            leaf->dataPrompt = paramName + ":";
+            leaf->dataPosition = 0;
+        };
+        leaf->dataFunc = [this, leaf, info, mp, paramName] {
+            const std::string& item = leaf->dataItems[leaf->dataPosition];
+            mp->setParams({{paramName, paramValue(*info, item)}});
+            menu_.changeMenuNodes(leaf->parent);
+        };
+    }
 }
 
 }  // namespace mc

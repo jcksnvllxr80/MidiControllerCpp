@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "mc/adapters/mcu/Log.h"
+
 #include "pico/cyw43_arch.h"
 #include "pico/time.h"  // to_ms_since_boot / get_absolute_time
 
@@ -80,7 +82,9 @@ void WifiManager::saveConfig() {
 
 void WifiManager::begin() {
     loadConfig();
+    LOG_I("wifi", "begin enabled=%d ssid='%s'", (int)enabled_, ssid_.c_str());
     if (cyw43_arch_init()) {
+        LOG_E("wifi", "cyw43 init failed");
         emitStatus("WiFi: init failed");
         return;
     }
@@ -101,8 +105,10 @@ void WifiManager::startConnect() {
     if (!inited_ || !enabled_ || ssid_.empty()) return;
     uint32_t auth = password_.empty() ? CYW43_AUTH_OPEN : CYW43_AUTH_WPA2_AES_PSK;
     lastAttemptMs_ = nowMs();
+    LOG_I("wifi", "connecting to '%s'", ssid_.c_str());
     if (cyw43_arch_wifi_connect_async(ssid_.c_str(), password_.c_str(), auth) != 0) {
         link_ = Link::Idle;  // couldn't even start -> serviceLink() retries after backoff
+        LOG_E("wifi", "connect async start failed");
         emitStatus("WiFi: connect failed");
         return;
     }
@@ -126,6 +132,7 @@ void WifiManager::serviceLink() {
                 ip_.clear();
                 link_ = Link::Idle;
                 lastAttemptMs_ = nowMs();
+                LOG_W("wifi", "connect failed/timeout (st=%d) retrying in %lus", st, (unsigned long)(kRetryIntervalMs/1000));
                 emitStatus("WiFi: retrying");
             }
             break;
@@ -136,6 +143,7 @@ void WifiManager::serviceLink() {
                 teardownNet();
                 link_ = Link::Idle;
                 lastAttemptMs_ = nowMs();
+                LOG_W("wifi", "link lost (st=%d)", st);
                 emitStatus("WiFi: link lost");
             }
             break;
@@ -151,6 +159,7 @@ void WifiManager::onLinkUp() {
     ip_ = ip4addr_ntoa(netif_ip4_addr(netif_default));
     startServer();  // rebinds if a previous drop tore it down
     startMdns();
+    LOG_I("wifi", "connected ssid='%s' ip=%s port=%u", ssid_.c_str(), ip_.c_str(), port_);
     emitStatus("WiFi " + ip_);
 }
 
@@ -170,6 +179,7 @@ void WifiManager::teardownNet() {
 }
 
 void WifiManager::disconnectNow() {
+    LOG_I("wifi", "disconnecting");
     teardownNet();
     if (inited_) cyw43_wifi_leave(&cyw43_state, CYW43_ITF_STA);
     link_ = Link::Idle;
@@ -205,6 +215,7 @@ void WifiManager::startMdns() {
 }
 
 void WifiManager::onAccept(tcp_pcb* newpcb) {
+    LOG_I("wifi", "TCP client connected (replacing=%d)", client_ != nullptr);
     if (client_) {  // single client: replace the old one
         tcp_arg(client_, nullptr);
         tcp_close(client_);
@@ -222,6 +233,7 @@ void WifiManager::onAccept(tcp_pcb* newpcb) {
 void WifiManager::onRecv(tcp_pcb* pcb, const void* data, uint16_t len, bool closed) {
     if (closed) {
         if (client_ == pcb) {
+            LOG_I("wifi", "TCP client disconnected");
             tcp_arg(pcb, nullptr);
             tcp_close(pcb);
             client_ = nullptr;
@@ -235,6 +247,8 @@ void WifiManager::onRecv(tcp_pcb* pcb, const void* data, uint16_t len, bool clos
     for (uint16_t i = 0; i < len; ++i) {
         char c = p[i];
         if (c == '\n') {
+            LOG_D("wifi", "cmd (%zu): %.120s%s", rxLine_.size(), rxLine_.c_str(),
+                  rxLine_.size() > 120 ? "..." : "");
             if (proto_) outbox_ += proto_->handleLine(rxLine_);
             rxLine_.clear();
         } else if (c != '\r' && rxLine_.size() < 128 * 1024) {
@@ -263,6 +277,7 @@ void WifiManager::trySend() {
 void WifiManager::onSent() { trySend(); }
 
 void WifiManager::onClientErr() {
+    LOG_W("wifi", "TCP client error — connection dropped");
     client_ = nullptr;  // lwIP already freed the pcb
     rxLine_.clear();
     outbox_.clear();

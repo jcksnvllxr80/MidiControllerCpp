@@ -59,10 +59,10 @@ target_include_directories(midicontroller_pico PRIVATE
 
 target_link_libraries(midicontroller_pico
     pico_stdlib
-    hardware_uart
-    hardware_pwm
-    hardware_i2c
-    hardware_timer
+    hardware_uart      # stdio UART fallback (editor link); MIDI is over I2C
+    hardware_pwm       # RGB knob LED
+    hardware_i2c       # MCP23017 expander + PIC MIDI bridge (shared bus)
+    hardware_spi       # SSD1306 OLED
     hardware_flash     # FlashKv persistence
     hardware_sync
     hardware_watchdog  # reliability watchdog (main loop)

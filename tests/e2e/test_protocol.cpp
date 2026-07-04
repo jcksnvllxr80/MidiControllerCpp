@@ -24,7 +24,6 @@ namespace {
 struct Rig {
     sim::FsConfigStore store{"data"};
     RecordingMidiOut midi;
-    RecordingTempoOut tempo;
     RecordingDisplay display;
     NullLed led;
     FakeClock clock;
@@ -32,7 +31,7 @@ struct Rig {
     sim::NullConfigTransport tr;
     Application app;
     EditorProtocol proto;
-    Rig() : app({&store, &midi, &tempo, &display, &led, &clock, &input, &tr}), proto(store, app) {
+    Rig() : app({&store, &midi, &display, &led, &clock, &input, &tr}), proto(store, app) {
         app.setup();
     }
     json resp(const std::string& line) {
@@ -233,13 +232,12 @@ struct FakeWifi : IWifi {
 TEST(Protocol, WifiSetEnableStatus) {
     sim::FsConfigStore store{"data"};
     RecordingMidiOut midi;
-    RecordingTempoOut tempo;
     RecordingDisplay display;
     NullLed led;
     FakeClock clock;
     sim::ScriptedInput input;
     sim::NullConfigTransport tr;
-    Application app({&store, &midi, &tempo, &display, &led, &clock, &input, &tr});
+    Application app({&store, &midi, &display, &led, &clock, &input, &tr});
     app.setup();
     FakeWifi wifi;
     EditorProtocol proto(store, app, &wifi);

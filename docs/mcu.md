@@ -80,11 +80,11 @@ one, which is a stub for CDC devices).
 | Adapter | Port | Notes |
 |---|---|---|
 | `McuClock` | IClock | `time_us_64()` |
-| `McuMidiOut` / `TeeMidiOut` | IMidiOut | UART @31250 8N1, one per DIN jack; Tee mirrors to both |
-| `McuTempoOut` | ITempoOut | square wave at beat rate on 4 GPIOs via a repeating timer |
+| `McuMidiOut` | IMidiOut | raw MIDI bytes over I2C to the PIC bridge @0x04 (writeRaw8 per byte); the PIC fans out to all 6 jacks |
+| `McpExpander` | (helper) | MCP23017 @0x22 over I2C; configured byte-for-byte like the Pi (Footswitches.py); supplies the switch inputs |
 | `McuLed` | ILed | 3-channel PWM; colour names match RgbKnob |
-| `McuInput` | IInput | debounced footswitches (reuses domain `ButtonSM`), quadrature encoder, rotary push-button hold timing |
-| `Ssd1306Display` | IDisplay | 128x64 SSD1306 over I2C; splits on " - " into rows |
+| `McuInput` | IInput | 5 footswitches + rotary push button read from `McpExpander` over I2C (INT-driven, reuses domain `ButtonSM`); quadrature encoder on native GPIO |
+| `Ssd1306Display` | IDisplay | 128x64 SSD1306 over SPI (7-pin header: SCLK/MOSI/CS/DC/RST + power/GND); splits on " - " into rows |
 | `McuConfigStore` | IConfigStore | reads config baked into flash; writes go to a RAM overlay, persisted via `FlashKv` |
 | `FlashKv` | (persistence) | stores the write overlay in one reserved flash sector (`KvCodec`, host-tested) |
 | `EditorProtocol` (app) | — | newline-JSON request/response; shared by the USB and WiFi links |
@@ -136,7 +136,13 @@ far they're verified:
   over TCP `:8080`, and advertises via mDNS (`midicontroller.local` /
   `_midicontroller._tcp`). On/off via `wifi_enable`. The app side (a WiFi transport +
   "Set WiFi" UI) is specced in [`wifi-app-handoff.md`](wifi-app-handoff.md).
-- **Tap tempo** input isn't wired (no rig pedal uses it); `ITempoOut` is ready.
+- **MCP23017 input + selector polarity** — the expander is configured exactly as the
+  Pi did (`McpExpander`), but the INT-triggered read path and the selector's
+  inverted-polarity decode are **compile-verified only** — confirm
+  on hardware that all 5 footswitches and the rotary push button register.
+- **MIDI over I2C** — bytes go to the PIC @0x04 like the Pi; **confirm on hardware**
+  the bridge still fans out to the DIN + TRS jacks.
+- **OLED over SPI** — transport rewritten from I2C to SPI (7-pin header); **confirm on hardware**.
 - **On-target RAM check** — confirm the peak by parsing `BigSky.json` on device.
 
 ## Why RP2350 / Pico 2 W
@@ -144,5 +150,5 @@ far they're verified:
 520 KB RAM (vs RP2040's 264 KB) is what lets the build keep nlohmann/json
 uncompromised: config is parsed one file at a time, peak is the largest pedal's
 JSON DOM (~hundreds of KB worst case) which the 2 W absorbs comfortably. PIO,
-dual M33 + FPU, and native USB cover MIDI timing, tempo pulses, and the host link.
+dual M33 + FPU, and native USB cover MIDI timing and the host link.
 Confirm the real RAM peak by parsing BigSky on-target once.

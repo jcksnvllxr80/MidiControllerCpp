@@ -1,6 +1,6 @@
 // Sim entry point. Boots the core from data/ and runs a scripted sequence of
-// footswitch / encoder / rotary events, logging every MIDI message, tempo
-// change, LED update and OLED line — the desktop stand-in for the real pedal.
+// footswitch / encoder / rotary events, logging every MIDI message, LED
+// update and OLED line — the desktop stand-in for the real pedal.
 #include <iostream>
 
 #include "mc/adapters/sim/FsConfigStore.h"
@@ -12,7 +12,6 @@ int main() {
 
     sim::FsConfigStore store("data");
     sim::LoggingMidiOut midi;
-    sim::LoggingTempoOut tempo;
     sim::ConsoleDisplay display;
     sim::LoggingLed led;
     sim::ChronoClock clock;
@@ -32,7 +31,7 @@ int main() {
         .encoderCW()           // highlight next part
         .rotaryPress(0.2);     // select it -> load that part
 
-    Application app({&store, &midi, &tempo, &display, &led, &clock, &input, &transport});
+    Application app({&store, &midi, &display, &led, &clock, &input, &transport});
 
     std::cout << "=== MidiController sim: boot from data/ ===\n";
     app.setup();

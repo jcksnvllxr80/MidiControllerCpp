@@ -23,9 +23,13 @@ These are intentional, documented, and covered by tests.
   engage + preset MIDI as a side effect of building the object. Here, building a
   pedal sends nothing; the `Application` drives every emission through
   `loadPart()`. Cleaner and deterministic.
-- **Tempo is a first-class port.** `Application::loadPart()` always pushes the
-  song BPM to `ITempoOut`. Python only did this when a pedal happened to be named
-  `TapTempo` (none is), so tempo was effectively dead. The plan promotes it.
+- **Tempo is display-only, like the Pi.** The song BPM is shown on the OLED and
+  never transmitted. Python *looked* like it sent tempo MIDI on part load, but only
+  for a pedal named `TapTempo` — and no such pedal exists (legacy looper-era code),
+  so it was dead. An early C++ draft added an `ITempoOut` pulse port for this; that
+  was fiction (the board has no tempo jacks — the 4 TRS jacks are MIDI) and has been
+  removed. `MidiPedal::setTempo()` remains as a faithful, unused mirror of the Python
+  method.
 - **No `eval`.** `Transform` is a fixed grammar; an unknown expression is a loud
   load-time error rather than a silently-evaluated lambda.
 - **Menu select uses clean semantics.** The deep "edit a pedal's CC map" submenu

@@ -15,14 +15,13 @@ namespace {
 struct Rig {
     sim::FsConfigStore store{"data"};
     RecordingMidiOut midi;
-    RecordingTempoOut tempo;
     RecordingDisplay display;
     NullLed led;
     FakeClock clock;
     sim::ScriptedInput input;
     sim::NullConfigTransport transport;
     Application app;
-    Rig() : app({&store, &midi, &tempo, &display, &led, &clock, &input, &transport}) { app.setup(); }
+    Rig() : app({&store, &midi, &display, &led, &clock, &input, &transport}) { app.setup(); }
     void fsShort(int b) { app.handleEvent({InputEvent::Type::FootswitchShort, b, 0}); }
     void fsLong(int b) { app.handleEvent({InputEvent::Type::FootswitchLong, b, 0}); }
     void cw() { app.handleEvent({InputEvent::Type::EncoderCW, 0, 0}); }

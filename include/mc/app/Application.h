@@ -12,6 +12,7 @@
 // the microcontroller later.
 //
 #include <algorithm>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -29,7 +30,6 @@
 #include "mc/ports/IInput.h"
 #include "mc/ports/ILed.h"
 #include "mc/ports/IMidiOut.h"
-#include "mc/ports/ITempoOut.h"
 
 namespace mc {
 
@@ -38,7 +38,6 @@ public:
     struct Ports {
         IConfigStore* store = nullptr;
         IMidiOut* midi = nullptr;
-        ITempoOut* tempo = nullptr;
         IDisplay* display = nullptr;
         ILed* led = nullptr;
         IClock* clock = nullptr;
@@ -52,6 +51,10 @@ public:
     void run();          // poll input -> dispatch until Quit / source exhausted
     bool handleEvent(const InputEvent& ev);  // false => stop loop
     void tick();         // periodic housekeeping (debounced "save defaults"); call each loop iter
+
+    // Optional: invoked once per handled input/command (physical or editor) so a
+    // host can flash an activity indicator. Portable code stays hardware-agnostic.
+    void setActivitySink(std::function<void()> fn) { activitySink_ = std::move(fn); }
 
     bool setupFailed() const { return setupFailed_; }  // config parse fell back to a safe shell
 
@@ -101,6 +104,10 @@ private:
     void show(const std::string& msg);  // route all display text through here
     std::string songInfoString(const Song& s, const Part& p) const;
     void buildMenu();
+    void buildPedalMenu();     // Setup -> Midi Pedals -> pedal -> group -> param (live edit)
+    // Lazy builders for the pedal editor — run on first node entry, never at boot.
+    void buildPedalGroups(MenuNode* pedalNode, const PedalConfig* cfg, MidiPedal* mp);
+    void buildParamLeaves(MenuNode* groupNode, const Action* groupAction, MidiPedal* mp);
     void markDefaultsDirty();  // a commit changed current set/song/part
     void persistDefaults();    // write current set/song/part back to midi_controller.json
 
@@ -116,6 +123,7 @@ private:
     int displayedPartIdx_ = 0;
     bool quitRequested_ = false;
     std::string lastMessage_;
+    std::function<void()> activitySink_;  // optional activity-indicator pulse
     bool setupFailed_ = false;       // config parse threw -> running in a safe shell
     bool defaultsDirty_ = false;     // current set/song/part changed, not yet persisted
     double defaultsDirtyAt_ = 0.0;   // clock time of the change (for debounced flush)
@@ -124,6 +132,7 @@ private:
     MenuNode* setupMenu_ = nullptr;
     MenuNode* globalMenu_ = nullptr;
     MenuNode* powerMenu_ = nullptr;
+    MenuNode* midiPedalsMenu_ = nullptr;  // Setup -> Midi Pedals (per-pedal live editor)
     MenuNode* setsNode_ = nullptr;
     MenuNode* songsNode_ = nullptr;
     MenuNode* partsNode_ = nullptr;

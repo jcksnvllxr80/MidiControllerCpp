@@ -22,7 +22,6 @@ namespace {
 struct Rig {
     sim::FsConfigStore store;
     RecordingMidiOut midi;
-    RecordingTempoOut tempo;
     RecordingDisplay display;
     NullLed led;
     FakeClock clock;
@@ -30,7 +29,7 @@ struct Rig {
     sim::NullConfigTransport tr;
     Application app;
     explicit Rig(const std::string& dir)
-        : store(dir), app({&store, &midi, &tempo, &display, &led, &clock, &input, &tr}) {
+        : store(dir), app({&store, &midi, &display, &led, &clock, &input, &tr}) {
         app.setup();
     }
     std::string savedSong() { return json::parse(store.read("midi_controller.json"))["current_settings"]["preset"]["song"]; }

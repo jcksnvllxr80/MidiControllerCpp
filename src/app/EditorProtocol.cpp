@@ -118,6 +118,19 @@ std::string EditorProtocol::handleLine(const std::string& line) {
             app_.handleEvent({InputEvent::Type::FootswitchShort, button, 0.0});
             resp["ok"] = true;
             resp["data"] = {{"display_message", app_.displayedMessage()}};
+        } else if (op == "long") {
+            // 2–5 s rotary-press → global menu (Knob Color / Brightness / Button Lock).
+            app_.handleEvent({InputEvent::Type::RotaryPress, 0, 3.0});
+            resp["ok"] = true;
+            resp["data"] = {{"display_message", app_.displayedMessage()}};
+        } else if (op == "extra_long") {
+            // Extra-long rotary-press (> 5 s) → power menu.
+            app_.handleEvent({InputEvent::Type::RotaryPress, 0, 6.0});
+            resp["ok"] = true;
+            resp["data"] = {{"display_message", app_.displayedMessage()}};
+        } else if (op == "get_display") {
+            resp["ok"] = true;
+            resp["data"] = {{"display_message", app_.displayedMessage()}};
         } else if (op == "wifi_status" || op == "wifi_set" || op == "wifi_enable") {
             if (!wifi_) {
                 resp["ok"] = false;

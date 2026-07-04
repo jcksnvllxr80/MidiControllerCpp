@@ -9,6 +9,7 @@
 #include "pico/stdlib.h"  // XIP_BASE, PICO_OK
 
 #include "mc/adapters/mcu/KvCodec.h"
+#include "mc/adapters/mcu/Log.h"
 
 namespace mc::mcu {
 
@@ -37,12 +38,19 @@ std::map<std::string, std::string> FlashKv::load() {
 
 void FlashKv::save(const std::map<std::string, std::string>& kv) {
     std::string blob = kv::encode(kv);
-    if (blob.size() > size_) return;  // too big for the reserved sector (TODO: multi-sector)
+    if (blob.size() > size_) {
+        LOG_E("flash", "save: blob %zu bytes exceeds sector %lu — skipped",
+              blob.size(), static_cast<unsigned long>(size_));
+        return;
+    }
 
     // Pad up to a whole number of flash pages (program granularity).
     size_t padded = ((blob.size() + FLASH_PAGE_SIZE - 1) / FLASH_PAGE_SIZE) * FLASH_PAGE_SIZE;
     std::vector<uint8_t> buf(padded, 0xFF);
     std::memcpy(buf.data(), blob.data(), blob.size());
+
+    LOG_D("flash", "save %zu bytes -> %zu padded (offset=0x%08lX)",
+          blob.size(), padded, static_cast<unsigned long>(offset_));
 
     FlashOp op{offset_, size_, buf.data(), buf.size()};
     // flash_safe_execute is the SDK-blessed path: it parks the other core and
@@ -53,10 +61,12 @@ void FlashKv::save(const std::map<std::string, std::string>& kv) {
     if (flash_safe_execute(doFlashOp, &op, 500) != PICO_OK) {
         // Fallback if the safe path is unavailable: mask IRQs and do it directly.
         // Correct as long as nothing else executes from flash meanwhile (single core).
+        LOG_W("flash", "flash_safe_execute unavailable — falling back to direct IRQ-masked write");
         uint32_t ints = save_and_disable_interrupts();
         doFlashOp(&op);
         restore_interrupts(ints);
     }
+    LOG_I("flash", "save done");
 }
 
 }  // namespace mc::mcu

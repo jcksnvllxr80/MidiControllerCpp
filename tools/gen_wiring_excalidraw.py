@@ -17,30 +17,32 @@ RBOX_X, RBOX_W = 860, 330           # right peripheral column
 
 # (physical pin, label, used?) — left column top->bottom is pins 1..20
 LEFT = [
-    (1, "GP0", True), (2, "GP1", False), (3, "GND", False), (4, "GP2", True),
+    (1, "GP0", False), (2, "GP1", False), (3, "GND", False), (4, "GP2", True),
     (5, "GP3", True), (6, "GP4", True), (7, "GP5", True), (8, "GND", False),
-    (9, "GP6", True), (10, "GP7", True), (11, "GP8", True), (12, "GP9", False),
+    (9, "GP6", False), (10, "GP7", False), (11, "GP8", False), (12, "GP9", False),
     (13, "GND", False), (14, "GP10", True), (15, "GP11", True), (16, "GP12", True),
-    (17, "GP13", True), (18, "GND", False), (19, "GP14", True), (20, "GP15", True),
+    (17, "GP13", False), (18, "GND", False), (19, "GP14", True), (20, "GP15", True),
 ]
 # right column top->bottom is pins 40..21
 RIGHT = [
     (40, "VBUS", True), (39, "VSYS", False), (38, "GND", False), (37, "3V3_EN", False),
     (36, "3V3(OUT)", True), (35, "ADC_VREF", False), (34, "GP28", False), (33, "AGND", False),
-    (32, "GP27", True), (31, "GP26", True), (30, "RUN", False), (29, "GP22", False),
-    (28, "GND", False), (27, "GP21", False), (26, "GP20", False), (25, "GP19", True),
-    (24, "GP18", True), (23, "GND", False), (22, "GP17", True), (21, "GP16", True),
+    (32, "GP27", False), (31, "GP26", False), (30, "RUN", False), (29, "GP22", False),
+    (28, "GND", False), (27, "GP21", True), (26, "GP20", True), (25, "GP19", True),
+    (24, "GP18", True), (23, "GND", False), (22, "GP17", True), (21, "GP16", False),
 ]
 # (title text, side, [row indices], fill)
+# The PCB is unchanged: footswitches + rotary push button are on the MCP23017
+# expander, and MIDI goes to the PIC bridge -- both on the shared I2C bus. The OLED
+# is on SPI. Only these 14 signals cross the ribbon/adapter to the Pico.
 PERIPHERALS = [
-    ("MIDI A out\nGP0 -> 220R -> DIN-5 pin 5", "L", [0], "#ffd8a8"),
-    ("6x Footswitch\nGP2..GP7 -> GND\n(internal pull-ups, active-low)", "L", [3, 4, 5, 6, 8, 9], "#a5d8ff"),
-    ("MIDI B out\nGP8 -> 220R -> DIN-5 pin 5", "L", [10], "#ffd8a8"),
-    ("Rotary encoder + push\nA=GP10  B=GP11  SW=GP12\ncommon -> GND", "L", [13, 14, 15], "#b2f2bb"),
-    ("Knob RGB LED (PWM)\nR=GP13 G=GP14 B=GP15\n220-470R each, common -> GND", "L", [16, 18, 19], "#eebefa"),
+    ("MCP23017 expander + PIC MIDI  (shared I2C)\n"
+     "SDA=GP4  SCL=GP5  ->  0x22 (switches) + 0x04 (MIDI)\n"
+     "INT A=GP2  INT B=GP3", "L", [3, 4, 5, 6], "#a5d8ff"),
+    ("Rotary encoder (native GPIO)\nA=GP14  B=GP15\n(push button is on the expander)", "L", [18, 19], "#b2f2bb"),
+    ("Knob RGB LED (PWM)\nR=GP10 G=GP11 B=GP12\n220-470R each, common -> GND", "L", [13, 14, 15], "#eebefa"),
     ("Power\nVBUS = 5V (USB)\n3V3(OUT) -> all peripherals", "R", [0, 4], "#ffec99"),
-    ("OLED SSD1306  I2C1 @ 0x3C\nSDA=GP26  SCL=GP27\nVCC=3V3  GND  (400 kHz)", "R", [8, 9], "#a5d8ff"),
-    ("4x Tempo out (1/4\")\nGP16 GP17 GP18 GP19\n3.3V square wave, sleeve -> GND", "R", [15, 16, 18, 19], "#b2f2bb"),
+    ("OLED SSD1306  (SPI, 7-pin header)\nSCLK=GP18  MOSI=GP19\nCS=GP17  DC=GP20  RST=GP21  (+VEE,GND)", "R", [13, 14, 15, 16, 18], "#ffd8a8"),
 ]
 
 elements = []
@@ -132,10 +134,10 @@ for title, side, rows, fill in PERIPHERALS:
 
 # --- footer note ------------------------------------------------------------
 text(LBOX_X, row_y(20) + 24,
-     "Notes:  Pins are firmware-defined - edit Pins.h to match your wiring.\n"
-     "MIDI DIN-5: pin 4 -> 220R -> 3V3, pin 5 -> 220R -> UART TX, pin 2 -> GND.\n"
-     "I2C1 only on SDA GP26 / SCL GP27 here; UART TX only on GP0 (uart0) and GP8 (uart1).\n"
-     "Red dots = pins the firmware drives.  See docs/wiring.md for the full build.",
+     "Notes:  Driving-board swap - the PCB is unchanged; the old Pi ribbon maps to these Pico pins.\n"
+     "Footswitches (x5) + rotary push button live on the MCP23017 (0x22); MIDI goes to the PIC (0x04),\n"
+     "which fans out to the 6 jacks (2x DIN-5 + 4x TRS-MIDI).  Both share one I2C bus (i2c0).\n"
+     "Red dots = pins the firmware drives.  See docs/wiring.md and pi4-pico2w-conversion.md.",
      size=13, color="#495057", font=2)
 
 doc = {"type": "excalidraw", "version": 2, "source": "tools/gen_wiring_excalidraw.py",
