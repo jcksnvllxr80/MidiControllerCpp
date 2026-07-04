@@ -34,7 +34,24 @@ I²C peripherals on the board.
 | | Green (PWM) | GPIO20 | **GP11** | knob LED |
 | | Blue (PWM) | GPIO21 | **GP12** | knob LED |
 | **Power** | 3V3 | phys pin 17 | **3V3(OUT) pin 36** | net `VEE` → OLED supply (`J1`). (Pi pin 1, the other 3V3, is no-connect.) |
-| | 5V | phys pin 2 | **VBUS pin 40** | net `VCC` → chip VDD + pull-ups |
+| | 5V | phys pin 2 | **VBUS pin 40** | net `VCC` → chip VDD + pull-ups — **see warning below** |
+
+> ⚠️ **`VCC` (5 V) feeds more than "chip VDD + pull-ups" — it reaches six of
+> the signal lines in the table above.** MCP23017 (`U2`) and the PIC bridge
+> (`U10`) both run at `VCC` = 5 V, and so do: the I²C pull-ups (`R73`/`R74`
+> on SDA/SCL), the MCP INT A/INT B push-pull outputs, and the rotary
+> encoder's A/B pull-ups (`R29`/`R30`, confirmed in
+> `pcb/midi-controller/MidiControllerPCB.net`). That means **GP4, GP5, GP2,
+> GP3, GP14, GP15 all present 5 V to the Pico** and need level-shifting.
+>
+> **`VCC` stays at 5 V — it can't just be rewired to `3V3(OUT)`.** `U5` (a
+> CD4050 hex buffer, powered from `VCC`) fans the PIC's MIDI output to all 6
+> jacks, and MIDI's current-loop spec is nominally 5 V through 220 Ω
+> resistors; dropping `VCC` to 3.3 V would weaken that drive for real MIDI
+> gear. See [`wiring.md`](wiring.md) §1a for the level-shifter wiring (one
+> 8-channel BSS138 module covers all 6 lines) and the full pin-by-pin
+> breakdown. The encoder's RGB LED common is also tied to `VCC`,
+> common-anode — not common-cathode as earlier drafts assumed.
 | **Ground** (J35 GND pins) | GND | phys pin 6 | **GND pin 3** | board GND plane |
 | | GND | phys pin 9 | **GND pin 8** | board GND plane |
 | | GND | phys pin 14 | **GND pin 13** | board GND plane |

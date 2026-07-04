@@ -25,44 +25,58 @@ That internal diode is the whole trick: mirror it for the external supply.
 ```
    USB 5V ──[ internal D1 ]──┐
                              ├──► VSYS (pin 39) ──► SMPS ──► 3V3
-9V→5V reg ──[ ext Schottky ]─┘
+9V→5V module ──[ ext Schottky ]─┘
                   │
    pedalboard GND ── common GND ── Pico GND (pin 38)
 ```
 
-1. Regulate pedalboard **9V down to ~5V**.
-2. Feed that 5V into **VSYS through a Schottky diode** (e.g. 1N5817 / SS14,
-   ~0.3V drop to match the internal D1).
+1. Regulate pedalboard **9V down to ~5V** with the module below.
+2. Feed that 5V into **VSYS through a Schottky diode** (~0.3V drop, matches
+   the internal D1).
 3. Tie **grounds together** (pedalboard supply GND ↔ Pico GND).
 
 VSYS then sits at roughly `max(VBUS − 0.3, Vext − 0.3)`. Whichever source is
 higher powers the board; the lower one is reverse-blocked by its diode. USB can
 be plugged in to program **while** the 9V is connected, with zero contention.
-This is the method in the Raspberry Pi Pico datasheet ("Powering Pico").
+
+## The 9V → 5V module
+
+**Breadboard: Recom R-78E5.0-1.0** — a synchronous buck regulator with the
+inductor potted inside the package, so there's no separate magnetics part to
+source or lay out. It's a **leaded, through-hole SIP-3 part** (TO-220-compatible
+pin spacing, 2.54mm pitch) — plugs straight into a breadboard.
+
+**PCB: MPM3610** — a synchronous buck regulator with the inductor built into
+the package, so there's no separate magnetics part, no missing footprint to
+chase down, and no FB-divider/inductor/extra-cap parts to place. It accepts up
+to 21V in, comfortably covering the 9V pedalboard rail.
+
+| Part | Breadboard | PCB |
+|---|---|---|
+| 9V→5V module | [Recom R-78E5.0-1.0](https://www.digikey.com/en/products/detail/recom-power/R-78E5-0-1-0/4930585) — SIP-3, THT, 5V/1A out, up to 28V in | [MPM3610GQV-Z](https://www.digikey.com/en/products/detail/monolithic-power-systems-inc/MPM3610GQV-Z/5292909) — QFN-20, 3×5×1.6mm, 5V/1.2A out, up to 21V in |
+| OR-ing diode into VSYS | [1N5817-T](https://www.digikey.com/en/products/detail/diodes-incorporated/1N5817-T/22052) (DO-41, THT) | [SS14](https://www.digikey.com/en/products/detail/onsemi/SS14/965474) (SMA/DO-214AC) |
+
+### PCB footprints (KiCad)
+
+| Part | Package | KiCad footprint |
+|---|---|---|
+| MPM3610GQV-Z | QFN-20, 3×5×1.6mm | *No stock KiCad footprint* — download from [SnapEDA](https://www.snapeda.com/parts/MPM3610GQV-Z/MPS/view-part/) |
+| SS14 diode | SMA / DO-214AC | `Diode_SMD:D_SMA` |
 
 ## Important details
 
-- **Stay under 5.5V at VSYS.** 5V minus a Schottky drop ≈ 4.7V — well in range.
-  Never feed 9V directly to VSYS.
-- **Use a buck (switching) regulator, not a 7805**, if heat matters. 9V→5V
-  linear burns `4V × load` as heat. An MP1584 / mini-360 buck module is cheap
-  and runs cool. A 7805 works but gets warm (needs ~1.5–2V dropout headroom).
-- **Current budget:** Pico + SPI OLED + MCP23017 (@0x22) + the I²C→MIDI PIC
-  bridge (@0x04) is well under ~300mA, so a small 5V regulator is plenty.
-- **Pedalboard polarity:** many 9V pedal supplies are center-negative
-  (Boss style) and daisy-chains can share ground unexpectedly. Ensure the
-  regulator's input ground = output ground = Pico ground, and confirm jack
-  polarity before wiring.
+- **Stay under 5.5V at VSYS.** 5V minus a Schottky drop ≈ 4.7V — well in
+  range. Never feed 9V directly to VSYS.
 - **Do NOT connect external 5V straight to VBUS.** That ties it to the USB 5V
   line and can back-feed the PC's USB port. Always enter via VSYS through the
   diode.
-
-## Lower-drop alternative
-
-To avoid the ~0.3V Schottky loss, replace the external diode with a P-channel
-MOSFET ideal-diode / load-sharing IC (e.g. LM66100 into VSYS). Same OR-ing
-behavior, near-zero drop. The plain Schottky is simpler and fine here, since a
-~4.7V VSYS is plenty for the SMPS.
+- **Pedalboard polarity:** many 9V pedal supplies are center-negative
+  (Boss style) and daisy-chains can share ground unexpectedly. Ensure the
+  module's input ground = output ground = Pico ground, and confirm jack
+  polarity before wiring.
+- **Current budget:** Pico + SPI OLED + MCP23017 (@0x22) + the I²C→MIDI PIC
+  bridge (@0x04) is well under ~300mA — the MPM3610's 1.2A rating leaves
+  plenty of headroom.
 
 ## Pedalboard Isolation (Strymon Ojai)
 
@@ -85,54 +99,3 @@ switching-noise source regardless of how the 5V is made. The defense is
 - **Polarity:** Strymon outputs are **center-negative** 2.1mm barrel
   (Boss-standard). Wire the input jack as **tip = − / ground, sleeve = +9V**.
   Don't assume center-positive.
-
-Because isolation kills the ground-loop path, the regulator choice below is only
-about local ripple on the 5V rail — which the Pico's SMPS rejects anyway. Either
-a filtered buck or a linear is safe here.
-
-## Regulate Pedal Power Down to 5V
-
-Use a **synchronous buck (step-down switching) regulator**. Linear regulators
-(7805 / LM317) dump the extra voltage as heat — at 9→5V they're only ~55%
-efficient. A good synchronous buck hits **90–95%**.
-
-### Why buck wins here
-
-At 9V in, 5V out, ~300mA load (~1.5W):
-
-- **7805 linear:** dissipates `(9 − 5) × 0.3 = 1.2W` as heat → ~55% efficient,
-  runs hot, no heatsink margin.
-- **Synchronous buck:** dissipates ~0.1–0.15W → ~90–95% efficient, stays cool,
-  no heatsink.
-
-For a pedalboard supply that's often current-limited, the efficiency also means
-you draw less from the 9V rail.
-
-### Options
-
-| Option | Topology | Efficiency | Notes |
-|---|---|---|---|
-| **TPS562201 / TPS563201** | Synchronous buck IC | ~90–95% | Best pick for a PCB layout. Fixed-freq, tiny, cheap, low Iq. Needs 1 inductor + a few caps. |
-| **MP2315 / MP1584EN** | Async/sync buck IC | ~88–93% | MP1584 is the classic "mini-360" module — works but asynchronous (slightly less efficient, pot-adjustable). |
-| **Pre-made buck module** (mini-360 / MP1584) | Module | ~88–92% | Fastest path. Set the pot to 5.0V *before* wiring to the Pico. Cheap, but QC varies — measure output. |
-| **R-78E5.0-1.0** (Recom) | Drop-in switching reg | ~90% | Pin-compatible with a 7805 (TO-220 footprint), no external parts. Easiest reliable swap. |
-
-### Recommendation
-
-- **Zero design effort / drop-in:** the **Recom R-78E5.0-1.0** — same 3 pins as
-  a 7805, no inductor/caps to add, ~90% efficient, handles 1A. Just drop it into
-  a linear-reg footprint.
-- **Proper PCB layout:** a **TPS562201** synchronous buck. Best
-  efficiency-per-cost, runs cold, plenty of headroom over the ~300mA budget.
-
-### Practical notes
-
-- **Size for headroom:** load is ~300mA; pick a reg rated ≥1A so it loafs and
-  stays efficient/cool.
-- **Input/output caps matter:** follow the datasheet (typ. 10µF in, 22µF out,
-  low-ESR ceramic). The module options already include these.
-- **Switching noise:** bucks put ripple/EMI on the rail. Add a small LC or
-  10–22µF ceramic at the Pico's VSYS-side diode, and keep the inductor loop
-  tight. Usually a non-issue for digital + OLED + MIDI, but worth a bulk cap.
-- **Then feed VSYS through the Schottky** as above — the buck's 5.0V minus ~0.3V
-  ≈ 4.7V at VSYS, in range.
