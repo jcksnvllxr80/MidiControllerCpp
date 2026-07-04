@@ -104,6 +104,10 @@ private:
     void show(const std::string& msg);  // route all display text through here
     std::string songInfoString(const Song& s, const Part& p) const;
     void buildMenu();
+    void buildPedalMenu();     // Setup -> Midi Pedals -> pedal -> group -> param (live edit)
+    // Lazy builders for the pedal editor — run on first node entry, never at boot.
+    void buildPedalGroups(MenuNode* pedalNode, const PedalConfig* cfg, MidiPedal* mp);
+    void buildParamLeaves(MenuNode* groupNode, const Action* groupAction, MidiPedal* mp);
     void markDefaultsDirty();  // a commit changed current set/song/part
     void persistDefaults();    // write current set/song/part back to midi_controller.json
 
@@ -128,6 +132,7 @@ private:
     MenuNode* setupMenu_ = nullptr;
     MenuNode* globalMenu_ = nullptr;
     MenuNode* powerMenu_ = nullptr;
+    MenuNode* midiPedalsMenu_ = nullptr;  // Setup -> Midi Pedals (per-pedal live editor)
     MenuNode* setsNode_ = nullptr;
     MenuNode* songsNode_ = nullptr;
     MenuNode* partsNode_ = nullptr;

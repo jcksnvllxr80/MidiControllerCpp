@@ -178,13 +178,23 @@ void Ssd1306Display::setMessage(const std::string& msg) {
         start = hit + sep.size();
     }
 
-    int titleEnd = 1;  // number of leading segments that form the title
+    int titleEnd = -1;  // number of leading segments that form the title (-1 = no BPM seen)
     for (int i = 0; i < n; ++i) {
         const std::string& s = segs[i];
         if (s.size() >= 3 && s.compare(s.size() - 3, 3, "BPM") == 0) {
             titleEnd = i;  // title is everything before the BPM field
             break;
         }
+    }
+    if (titleEnd < 0) {
+        // No BPM field => a menu message (e.g. the pedal editor's
+        // "TimeLine: - Knobs/Switches: - Type: - dTape"). Put the whole breadcrumb
+        // PATH on the marquee title line and keep only the LAST segment (the current
+        // item/value) as the body. Deep paths then scroll across the top instead of
+        // stacking into body rows that fall off the bottom of the 64px panel, while
+        // the selection stays visible on its own line. Mirrors how the root screen
+        // marquees a long song title.
+        titleEnd = (n >= 2) ? n - 1 : n;
     }
     if (titleEnd < 1) titleEnd = 1;  // always keep at least the first segment
 
